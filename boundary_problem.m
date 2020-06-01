@@ -13,7 +13,7 @@ G   = 0.5;     % shear modulus
 % NUMERICS
 Nx  = 200;     % number of space steps
 Ny  = 200;
-Nt  = 200;     % number of time steps
+Nt  = 1000;     % number of time steps
 CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
@@ -23,6 +23,7 @@ x      = (-Lx / 2) : dX : (Lx / 2);                       % space discretization
 y      = (-Ly/2) : dY : (Ly/2);
 [x, y] = ndgrid(x, y);                                    % 2D mesh
 dt     = CFL * min(dX, dY) / sqrt( (K + 4*G/3) / rho);    % time step
+damp   = 4 / dt / Nx;
 
 % INITIAL CONDITIONS
 P     = zeros(Nx, Ny);
@@ -45,9 +46,9 @@ for it = 1 : Nt
   tauxy = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
   % motion equation
   dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
-  Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) + dVxdt * dt;
+  Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
   dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX;
-  Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) + dVydt * dt;
+  Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
   
 % POSTPROCESSING
   if mod(it, 10) == 0
