@@ -13,7 +13,7 @@ G   = 0.5;     % shear modulus
 % NUMERICS
 Nx  = 200;     % number of space steps
 Ny  = 200;
-Nt  = 1000;     % number of time steps
+Nt  = 1000;    % number of time steps
 CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
@@ -29,6 +29,8 @@ damp   = 4 / dt / Nx;
 P     = zeros(Nx, Ny);
 P     = exp(-x .* x - y .* y);    % hydrostatic stress (ball part of tensor)
 P0    = P;                        % initial hydrostatic stress
+Ux    = zeros(Nx + 1, Ny);        % displacement
+Uy    = zeros(Nx, Ny + 1);
 Vx    = zeros(Nx + 1, Ny);        % velocity
 Vy    = zeros(Nx, Ny + 1);
 tauxx = zeros(Nx, Ny);            % deviatoric stress
@@ -37,21 +39,28 @@ tauxy = zeros(Nx - 1, Ny - 1);
 
 % ACTION LOOP
 for it = 1 : Nt
-  % velocity divergence
-  divV                = diff(Vx,1,1) / dX + diff(Vy,1,2) / dY;
+  % displacement and velocity divergence
+  divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
+  divV = diff(Vx,1,1) / dX + diff(Vy,1,2) / dY;
+  
   % constitutive equation - Hooke's law
-  P     = P     + (-divV * K) * dt;
-  tauxx = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
-  tauyy = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
-  tauxy = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
+  P     = P + (-divV * K) * dt;
+  tauxx = 2.0 * G * (diff(Ux,1,1)/dX - divU/3.0);
+  tauyy = 2.0 * G * (diff(Uy,1,2)/dY - divU/3.0);
+  tauxy = G * (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
+  
   % motion equation
   dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
   Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
   dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX;
   Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
   
+  % displacements
+  Ux = Ux + Vx * dt;
+  Uy = Uy + Vy * dt;
+  
 % POSTPROCESSING
-  if mod(it, 10) == 0
+  if mod(it, 50) == 0
     pcolor(x, y, P)
     title(it)
     shading flat
