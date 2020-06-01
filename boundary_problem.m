@@ -1,4 +1,7 @@
-clear, figure(1), clf, colormap jet
+clear
+figure(1)
+clf
+colormap jet
 
 % PHYSICS
 Lx  = 10.0;    % physical length
@@ -15,7 +18,7 @@ CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
 dX     = Lx / (Nx - 1);                                   % space step
-dY     = Ly/(Ny - 1);
+dY     = Ly / (Ny - 1);
 x      = (-Lx / 2) : dX : (Lx / 2);                       % space discretization
 y      = (-Ly/2) : dY : (Ly/2);
 [x, y] = ndgrid(x, y);                                    % 2D mesh
@@ -34,13 +37,18 @@ tauxy = zeros(Nx - 1, Ny - 1);
 % ACTION LOOP
 for it = 1 : Nt
   % velocity divergence
-  divV                = diff(Vx,1,1)/dX + diff(Vy,1,2)/dY;
-  P                   = P     + (-divV * K) * dt;
-  tauxx               = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
-  tauyy               = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
-  tauxy               = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
-  Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) + (diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY)    * dt;
-  Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) + (diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX)    * dt;
+  divV                = diff(Vx,1,1) / dX + diff(Vy,1,2) / dY;
+  % constitutive equation - Hooke's law
+  P     = P     + (-divV * K) * dt;
+  tauxx = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
+  tauyy = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
+  tauxy = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
+  % motion equation
+  dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
+  Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) + dVxdt * dt;
+  dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX;
+  Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) + dVydt * dt;
+  
 % POSTPROCESSING
   if mod(it, 10) == 0
     pcolor(x, y, P)
