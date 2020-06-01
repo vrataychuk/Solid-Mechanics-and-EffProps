@@ -85,3 +85,8 @@ for it = 1 : Nt
     drawnow
   end
 end
+
+GetSigma = [0 0 0];
+GetSigma(1) = mean(tauxx(:) - P(:))
+GetSigma(2) = mean(tauyy(:) - P(:))
+GetSigma(3) = mean(tauxy(:))
