@@ -4,19 +4,19 @@ function S = get_sigma_2D(loadValue, loadType)
   colormap jet
 
   % PHYSICS
-  Lx  = 10.0;                         % physical length
-  Ly  = 10.0;                         % physical width
-  E0   = 1.0;                         % Young's modulus
-  nu0  = 0.25;                        % Poisson's ratio  
-  rho = 1.0;                          % density
+  Lx  = 16.0;                         % physical length
+  Ly  = 16.0;                         % physical width
+  E0   = 2.0;                      % Young's modulus
+  nu0  = 0.2;                         % Poisson's ratio  
+  rho0 = 2.0;                      % density
   K0   = E0 / (3.0 * (1 - 2 * nu0));  % bulk modulus
   G0   = E0 / (2.0 + 2.0 * nu0);      % shear modulus
 
   % NUMERICS
   Nx  = 200;     % number of space steps
   Ny  = 200;
-  Nt  = 1000;    % number of time steps
-  CFL = 0.5;     % Courant–Friedrichs–Lewy
+  Nt  = 4000000;    % number of time steps
+  CFL = 0.125;     % Courant–Friedrichs–Lewy
 
   % PREPROCESSING
   dX     = Lx / (Nx - 1);                                   % space step
@@ -26,15 +26,15 @@ function S = get_sigma_2D(loadValue, loadType)
   [x, y] = ndgrid(x, y);                                    % 2D mesh
   [xUx, yUx] = ndgrid((-(Lx + dX)/2) : dX : ((Lx + dX)/2), (-Ly/2) : dY : (Ly/2));
   [xUy, yUy] = ndgrid((-Lx/2) : dX : (Lx/2), (-(Ly+dY)/2) : dY : ((Ly+dY)/2));
-  dt     = CFL * min(dX, dY) / sqrt( (K0 + 4*G0/3) / rho);    % time step
-  damp   = 4 / dt / Nx;
+  dt     = CFL * min(dX, dY) / sqrt( (K0 + 4*G0/3) / rho0);    % time step
+  damp   = 4.0 / dt / Nx;
   
   % MATERIALS
   E = zeros(Nx, Ny);
   nu = zeros(Nx, Ny);
-  [E, nu] = set_mats_2D(Nx, Ny);     % Young's modulus and Poisson's ratio
-  K = E ./ (3.0 * (1 - 2 * nu));     % bulk modulus
-  G = E ./ (2.0 + 2.0 * nu);         % shear modulus
+  [E, nu] = set_mats_2D(Nx, Ny, x, y);     % Young's modulus and Poisson's ratio
+  K = E ./ (3.0 * (1 - 2 * nu));             % bulk modulus
+  G = E ./ (2.0 + 2.0 * nu);                 % shear modulus
 
   % INITIAL CONDITIONS
   P0    = zeros(Nx, Ny);            % initial hydrostatic stress
@@ -66,9 +66,9 @@ function S = get_sigma_2D(loadValue, loadType)
     tauxy = av4(G) .* (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
     
     % motion equation
-    dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
+    dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho0 + diff(tauxy,1,2)/dY;
     Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
-    dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX;
+    dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho0 + diff(tauxy,1,1)/dX;
     Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
     
     % displacements
@@ -76,7 +76,7 @@ function S = get_sigma_2D(loadValue, loadType)
     Uy = Uy + Vy * dt;
     
   % POSTPROCESSING
-    if mod(it, 100) == 0
+    if mod(it, 100000) == 0
       subplot(2, 1, 1)
       pcolor(x, y, diff(Ux,1,1)/dX)
       title(it)
@@ -92,8 +92,8 @@ function S = get_sigma_2D(loadValue, loadType)
       axis image        % square image
       
       drawnow
-    end
-  end
+    endif
+  endfor
 
   S = [0 0 0];
   S(1) = mean(tauxx(:) - P(:))
