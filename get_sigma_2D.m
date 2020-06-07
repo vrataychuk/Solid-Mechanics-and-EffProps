@@ -1,22 +1,23 @@
-function S = get_sigma_2D(loadValue, loadType)
+function S = get_sigma_2D(loadValue, loadType, Nt)
   figure(1)
   clf
   colormap jet
 
   % PHYSICS
-  Lx  = 16.0;                         % physical length
-  Ly  = 16.0;                         % physical width
-  E0   = 2.0;                      % Young's modulus
-  nu0  = 0.2;                         % Poisson's ratio  
-  rho0 = 2.0;                      % density
+  Lx  = 10.0;                         % physical length
+  Ly  = 10.0;                         % physical width
+  E0   = 1.0;                      % Young's modulus
+  nu0  = 0.25;                         % Poisson's ratio  
+  rho0 = 1.0;                      % density
   K0   = E0 / (3.0 * (1 - 2 * nu0));  % bulk modulus
   G0   = E0 / (2.0 + 2.0 * nu0);      % shear modulus
 
   % NUMERICS
-  Nx  = 200;     % number of space steps
-  Ny  = 200;
-  Nt  = 4000000;    % number of time steps
-  CFL = 0.125;     % Courant–Friedrichs–Lewy
+  Nx  = 100;     % number of space steps
+  Ny  = 100;
+  %Nt  = 10;      % number of time steps
+  nIter = 1000;
+  CFL = 0.5;     % Courant–Friedrichs–Lewy
 
   % PREPROCESSING
   dX     = Lx / (Nx - 1);                                   % space step
@@ -51,32 +52,36 @@ function S = get_sigma_2D(loadValue, loadType)
   dUxdx = loadValue * loadType(1);
   dUydy = loadValue * loadType(2);
   dUxdy = loadValue * loadType(3);
-  Ux = Ux + (dUxdx * xUx + dUxdy * yUx);
-  Uy = Uy + dUydy * yUy;
+  
+  S = zeros(Nt, 3);
 
   % ACTION LOOP
   for it = 1 : Nt
-    % displacement divergence
-    divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
-    
-    % constitutive equation - Hooke's law
-    P     = P0 - K .* divU;
-    tauxx = 2.0 * G .* (diff(Ux,1,1)/dX - divU/3.0);
-    tauyy = 2.0 * G .* (diff(Uy,1,2)/dY - divU/3.0);
-    tauxy = av4(G) .* (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
-    
-    % motion equation
-    dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho0 + diff(tauxy,1,2)/dY;
-    Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
-    dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho0 + diff(tauxy,1,1)/dX;
-    Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
-    
-    % displacements
-    Ux = Ux + Vx * dt;
-    Uy = Uy + Vy * dt;
+    Ux = Ux + (dUxdx * xUx + dUxdy * yUx) / Nt;
+    Uy = Uy + (dUydy * yUy) / Nt;
+    for iter = 1 : nIter
+      % displacement divergence
+      divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
+      
+      % constitutive equation - Hooke's law
+      P     = P0 - K .* divU;
+      tauxx = 2.0 * G .* (diff(Ux,1,1)/dX - divU/3.0);
+      tauyy = 2.0 * G .* (diff(Uy,1,2)/dY - divU/3.0);
+      tauxy = av4(G) .* (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
+      
+      % motion equation
+      dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho0 + diff(tauxy,1,2)/dY;
+      Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
+      dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho0 + diff(tauxy,1,1)/dX;
+      Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
+      
+      % displacements
+      Ux = Ux + Vx * dt;
+      Uy = Uy + Vy * dt;
+    endfor
     
   % POSTPROCESSING
-    if mod(it, 100000) == 0
+    if mod(it, 2) == 0
       subplot(2, 1, 1)
       pcolor(x, y, diff(Ux,1,1)/dX)
       title(it)
@@ -93,10 +98,10 @@ function S = get_sigma_2D(loadValue, loadType)
       
       drawnow
     endif
+    
+    S(it, 1) = mean(tauxx(:) - P(:));
+    S(it, 2) = mean(tauyy(:) - P(:));
+    S(it, 3) = mean(tauxy(:));
   endfor
-
-  S = [0 0 0];
-  S(1) = mean(tauxx(:) - P(:))
-  S(2) = mean(tauyy(:) - P(:))
-  S(3) = mean(tauxy(:))
+  
 endfunction

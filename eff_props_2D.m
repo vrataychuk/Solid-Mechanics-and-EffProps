@@ -1,15 +1,25 @@
 clear
 
 loadValue = 0.002;
-Sxx = get_sigma_2D(loadValue, [1, 0, 0]);
-Syy = get_sigma_2D(loadValue, [0, 1, 0]);
-Sxy = get_sigma_2D(loadValue, [0, 0, 1]);
+nTimeSteps = 2;
+Sxx = get_sigma_2D(loadValue, [1, 0, 0], nTimeSteps);
+Syy = get_sigma_2D(loadValue, [0, 1, 0], nTimeSteps);
+Sxy = get_sigma_2D(loadValue, [0, 0, 1], nTimeSteps);
 
-C1111 = Sxx(1) / loadValue
-C1122 = Sxx(2) / loadValue
-C1112 = Sxx(3) / loadValue
+C1111 = zeros(nTimeSteps, 1);
+C1122 = zeros(nTimeSteps, 1);
+C1112 = zeros(nTimeSteps, 1);
+C2222 = zeros(nTimeSteps, 1);
+C1222 = zeros(nTimeSteps, 1);
+C1212 = zeros(nTimeSteps, 1);
 
-C2222 = Syy(2) / loadValue
-C1222 = Syy(3) / loadValue
+for it = 1:nTimeSteps
+  C1111(it) = Sxx(it, 1) / loadValue / it * nTimeSteps
+  C1122(it) = Sxx(it, 2) / loadValue / it * nTimeSteps
+  C1112(it) = Sxx(it, 3) / loadValue / it * nTimeSteps
 
-C1212 = Sxy(3) / loadValue
+  C2222(it) = Syy(it, 2) / loadValue / it * nTimeSteps
+  C1222(it) = Syy(it, 3) / loadValue / it * nTimeSteps
+
+  C1212(it) = Sxy(it, 3) / loadValue / it * nTimeSteps
+endfor
