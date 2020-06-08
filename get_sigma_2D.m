@@ -71,9 +71,20 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
       tauyy = 2.0 * G .* (diff(Uy,1,2)/dY - divU/3.0);
       tauxy = av4(G) .* (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
       
-      % plasticity
+      % tauXY for plasticity
       tauxyAv(2:end-1,2:end-1) = av4(tauxy);
-      J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv.^2);
+      
+      tauxyAv(1, 2:end-1) = tauxyAv(2, 2:end-1);
+      tauxyAv(end, 2:end-1) = tauxyAv(end-1, 2:end-1);
+      tauxyAv(2:end-1, 1) = tauxyAv(2:end-1, 2);
+      tauxyAv(2:end-1, end) = tauxyAv(2:end-1, end-1);
+      tauxyAv(1, 1) = 0.5 * (tauxyAv(1, 2) + tauxyAv(2, 1));
+      tauxyAv(end, 1) = 0.5 * (tauxyAv(end, 2) + tauxyAv(end-1, 1));
+      tauxyAv(1, end) = 0.5 * (tauxyAv(2, end) + tauxyAv(1, end-1));
+      tauxyAv(end, end) = 0.5 * (tauxyAv(end, end-1) + tauxyAv(end-1, end));
+      
+      % plasticity
+      J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv.^2);    % 
       iPlast = find(J2 > coh);
       if length(iPlast) > 0
         tauxx(iPlast) = tauxx(iPlast) .* coh ./ J2(iPlast);
@@ -81,7 +92,7 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
         tauxyAv(iPlast) = tauxyAv(iPlast) .* coh ./ J2(iPlast);
         J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv .* tauxyAv);
       end
-      J2xy = sqrt(av4(tauxx).^2 + av4(tauyy).^2 + 2.0 * tauxy .* tauxy);    % plasticity part 2 tauxy
+      J2xy = sqrt(av4(tauxx).^2 + av4(tauyy).^2 + 2.0 * tauxy .* tauxy);
       iPlastXY = find(J2xy > coh);
       if length(iPlastXY) > 0
         tauxy(iPlastXY) = tauxy(iPlastXY) .* coh ./ J2xy(iPlastXY);
