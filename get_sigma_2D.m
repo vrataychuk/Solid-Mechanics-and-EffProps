@@ -84,19 +84,17 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
       tauxyAv(end, end) = 0.5 * (tauxyAv(end, end-1) + tauxyAv(end-1, end));
       
       % plasticity
-      J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv.^2);    % 
+      J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv .* tauxyAv);    % Tresca criteria
+      J2xy = sqrt(av4(tauxx).^2 + av4(tauyy).^2 + 2.0 * tauxy .* tauxy);
       iPlast = find(J2 > coh);
       if length(iPlast) > 0
         tauxx(iPlast) = tauxx(iPlast) .* coh ./ J2(iPlast);
         tauyy(iPlast) = tauyy(iPlast) .* coh ./ J2(iPlast);
-        tauxyAv(iPlast) = tauxyAv(iPlast) .* coh ./ J2(iPlast);
-        J2 = sqrt(tauxx .* tauxx + tauyy .* tauyy + 2.0 * tauxyAv .* tauxyAv);
-      end
-      J2xy = sqrt(av4(tauxx).^2 + av4(tauyy).^2 + 2.0 * tauxy .* tauxy);
+      endif
       iPlastXY = find(J2xy > coh);
       if length(iPlastXY) > 0
         tauxy(iPlastXY) = tauxy(iPlastXY) .* coh ./ J2xy(iPlastXY);
-      end
+      endif
       
       % motion equation
       dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho0 + diff(tauxy,1,2)/dY;
