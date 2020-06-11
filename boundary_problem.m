@@ -10,7 +10,7 @@ G   = 0.5;     % shear modulus
 % NUMERICS
 Nx  = 200;     % number of space steps
 Ny  = 200;
-Nt  = 200;     % number of time steps
+Nt  = 500;     % number of time steps
 CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
@@ -30,6 +30,29 @@ Vy    = zeros(Nx, Ny + 1);
 tauxx = zeros(Nx, Ny);            % deviatoric stress
 tauyy = zeros(Nx, Ny);
 tauxy = zeros(Nx - 1, Ny - 1);
+
+% INPUT FILES
+pa = [dX, dY, dt, K, G, rho];
+
+% parameters
+fil = fopen('pa.dat', 'wb');
+fwrite(fil, pa(:), 'double');
+fclose(fil);
+
+% initial pressure
+fil = fopen('P.dat', 'wb');
+fwrite(fil, P(:), 'double');
+fclose(fil);
+
+% initial Vx
+fil = fopen('Vx.dat', 'wb');
+fwrite(fil, Vx(:), 'double');
+fclose(fil);
+
+% initial Vy
+fil = fopen('Vy.dat', 'wb');
+fwrite(fil, Vy(:), 'double');
+fclose(fil);
 
 % ACTION LOOP
 for it = 1 : Nt
