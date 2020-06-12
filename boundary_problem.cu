@@ -5,50 +5,9 @@
 #include <fstream>
 #include "cuda.h"
 
-#define end                  }  
-#define load(A,nx,ny,Aname)  double *A##_d,*A##_h; A##_h = (double*)malloc((nx)*(ny)*sizeof(double));  \
-                             FILE* A##fid=fopen(Aname, "rb"); fread(A##_h, sizeof(double), (nx)*(ny), A##fid); fclose(A##fid); \
-                             cudaMalloc(&A##_d,((nx)*(ny))*sizeof(double)); \
-                             cudaMemcpy(A##_d,A##_h,((nx)*(ny))*sizeof(double),cudaMemcpyHostToDevice);                             
-#define save(A,nx,ny,Aname)  cudaMemcpy(A##_h,A##_d,((nx)*(ny))*sizeof(double),cudaMemcpyDeviceToHost);  \
-                             FILE* A##fidw=fopen(Aname, "wb"); fwrite(A##_h, sizeof(double), ((nx)*(ny)), A##fidw); fclose(A##fidw);                          
-#define for_(ix_start,ix_end,iy_start,iy_end) if (ix>=(ix_start) && ix<=(ix_end)  && iy>=(iy_start) && iy<=(iy_end)){
-               
-#define fun_call(A)          A<<<grid,block>>>(      So_d,      Vx_d,        Vy_d,        Pr_d,        pa_d,            nx,            ny); cudaDeviceSynchronize();   
-#define fun_def(A)           __global__ void A(double* So,double* Vx,double* Vy  ,double* Pr  , double* pa , const  int nx, const  int ny){ \
-                             int ix = blockIdx.x*blockDim.x + threadIdx.x + 1; /*if (ix>=(nx+1)) return;*/ \
-                             int iy = blockIdx.y*blockDim.y + threadIdx.y + 1; /*if (iy>=(ny+1)) return;*/ 
-#define  Pres(ix,iy)          Pr[ix + (iy-1)*nx     - 1]  
-#define  Velx(ix,iy)          Vx[ix + (iy-1)*(nx+1) - 1]         
-#define  Vely(ix,iy)          Vy[ix + (iy-1)*nx     - 1]  
-#define  Sorc(ix,iy)          So[ix + (iy-1)*nx     - 1]    
 #define NGRID  1
 #define NPARS  6
 #define NT  10
-//#define  para(ix,iy)          pa[ix                 - 1] 
-                             
-fun_def(compute_V) 
-double dx=pa[0],dy=pa[1],dt=pa[2],rho=pa[4],dmpX=pa[5],dmpY=pa[6];
-
-
-
-//double dx=para(1),dy=pa[1],dt=pa[2],rho=pa[4],dmpX=pa[5],dmpY=pa[6];
-    for_(2,nx  ,2,ny-1) Velx(ix,iy) = Velx(ix,iy)*dmpX - dt*(Pres(ix,iy)-Pres(ix-1,iy  ))/dx/rho; end 
-    for_(2,nx-1,2,ny  ) Vely(ix,iy) = Vely(ix,iy)*dmpY - dt*(Pres(ix,iy)-Pres(ix  ,iy-1))/dy/rho; end
-    printf("dt = %lf\n", dt);
-end
-
-
-            
-fun_def(compute_P)
-double dx=pa[0],dy=pa[1],dt=pa[2],k=pa[3];//,dmpX=pa[5];
-          Pres(ix,iy) = Pres(ix,iy)       - dt*k*((Velx(ix+1,iy  )-Velx(ix,iy))/dx
-                                          +       (Vely(ix  ,iy+1)-Vely(ix,iy))/dy );//  + dt*dt * Sorc(ix,iy);
-          /*if (ix ==  1) Pres(ix,iy) =  0*iy; 
-          if (iy ==  1) Pres(ix,iy) =  0*ix; 
-          if (ix == nx) Pres(ix,iy) =  0*nx; 
-          if (iy == ny) Pres(ix,iy) =  0*ny; */
-end
 
 __global__ void ComputeV(double* Vx, double* Vy, 
                          double* P,
@@ -144,11 +103,6 @@ int main() {
   fclose(pa_fil);
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
-
-  /*double* pa_cpu2 = (double*)malloc(NPARS * sizeof(double));
-  cudaMemcpy(pa_cpu2, pa_cuda, NPARS * sizeof(double), cudaMemcpyDeviceToHost);
-
-  std::cout << "dT = " << pa_cpu2[2] << std::endl;*/
 
   // stress
   double* P_cuda;
@@ -261,20 +215,6 @@ int main() {
   cudaFree(Vx_cuda);
   cudaFree(Vy_cuda);
 
-  /*load(pa,NPARS,  1,"pa.dat")
-  load(Pr,nx  ,ny  ,"Pr.dat")
-  load(Vx,nx+1,ny  ,"Vx.dat")
-  load(Vy,nx  ,ny+1,"Vy.dat")
-  load(So,nx  ,ny  ,"So.dat")
-  double dt = pa_h[2];
-  printf("dt = %lf\n", dt);
-  for (int it=1;it<=NT;it++){  
-  fun_call(compute_V)
-  fun_call(compute_P)
-  end        
-  save(Pr,nx  ,ny  ,"Pr.dat")
-  save(Vx,nx+1,ny  ,"Vx.dat")
-  save(Vy,nx  ,ny+1,"Vy.dat")*/
   cudaDeviceReset();
   return 0;
 }
