@@ -61,10 +61,10 @@ __global__ void ComputeV(double* Vx, double* Vy, double* P, double* pa, const lo
 
   // motion equation
   if (i > 0 && i < nX && j > 0 && j < nY - 1) {
-    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] + dT * (P[j * nX + i] - P[j * nX + i - 1]) / dX / rho;
+    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] + dT * (-P[j * nX + i] + P[j * nX + i - 1]) / dX / rho;
   }
   if (i > 0 && i < nX - 1 && j > 0 && j < nY) {
-    Vy[j * nX + i] = Vy[j * nX + i] + dT * (P[j * nX + i] - P[(j - 1) * nX + i]) / dY / rho;
+    Vy[j * nX + i] = Vy[j * nX + i] + dT * (-P[j * nX + i] + P[(j - 1) * nX + i]) / dY / rho;
   }
 }
 
@@ -156,9 +156,9 @@ int main() {
 
   /* ACTION LOOP */
   for (int it = 0; it < NT; it++) {
-    ComputeV<<<grid, block>>>(Vx_cuda, Vy_cuda, P_cuda, pa_cuda, nX, nY);
-    cudaDeviceSynchronize();    // wait for compute device to finish
-    ComputeSigma<<<grid, block>>>(Vx_cuda, Vy_cuda, P_cuda, pa_cuda, nX, nY);
+    ComputeSigma << <grid, block >> > (Vx_cuda, Vy_cuda, P_cuda, pa_cuda, nX, nY);
+    cudaDeviceSynchronize();    // wait for compute device to finish    
+    ComputeV << <grid, block >> > (Vx_cuda, Vy_cuda, P_cuda, pa_cuda, nX, nY);
     cudaDeviceSynchronize();    // wait for compute device to finish
 
     cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
