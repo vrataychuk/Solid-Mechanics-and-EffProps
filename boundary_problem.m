@@ -5,13 +5,13 @@ Lx  = 10.0;    % physical length
 Ly  = 10.0;    % physical width
 K   = 1.0;     % bulk modulus
 rho = 1.0;     % density
-G   = 0.5;     % shear modulus
+G   = 0.0;     % shear modulus
 
 % NUMERICS
 Nx  = 32;     % number of space steps
 Ny  = 32;
 Nt  = 10;     % number of time steps
-CFL = 0.5;     % Courantï¿½Friedrichsï¿½Lewy
+CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
 dX     = Lx / (Nx - 1);                                   % space step
@@ -59,9 +59,9 @@ for it = 1 : Nt
   % velocity divergence
   divV                = diff(Vx,1,1)/dX + diff(Vy,1,2)/dY;
   P                   = P     + (-divV * K) * dt;
-  tauxx               = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
-  tauyy               = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
-  tauxy               = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
+  %tauxx               = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
+  %tauyy               = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
+  %tauxy               = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
   Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) + (diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY)    * dt;
   Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) + (diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX)    * dt;
 % POSTPROCESSING
