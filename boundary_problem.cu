@@ -112,10 +112,10 @@ int main() {
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
 
-  double* pa_cpu2 = (double*)malloc(NPARS * sizeof(double));
+  /*double* pa_cpu2 = (double*)malloc(NPARS * sizeof(double));
   cudaMemcpy(pa_cpu2, pa_cuda, NPARS * sizeof(double), cudaMemcpyDeviceToHost);
 
-  std::cout << "dT = " << pa_cpu2[2] << std::endl;
+  std::cout << "dT = " << pa_cpu2[2] << std::endl;*/
 
   // pressure
   double* P_cuda;
@@ -151,8 +151,8 @@ int main() {
   cudaMalloc(&Vy_cuda, nX * (nY + 1) * sizeof(double));
   cudaMemcpy(Vy_cuda, Vy_cpu, nX * (nY + 1) * sizeof(double), cudaMemcpyHostToDevice);
 
-  double dt = pa_cuda[2];
-  printf("dt = %lf\n", dt);
+  /*double dt = pa_cuda[2];
+  printf("dt = %lf\n", dt);*/
 
   /* ACTION LOOP */
   for (int it = 0; it < NT; it++) {
