@@ -8,9 +8,9 @@ rho = 1.0;     % density
 G   = 0.5;     % shear modulus
 
 % NUMERICS
-Nx  = 200;     % number of space steps
-Ny  = 200;
-Nt  = 500;     % number of time steps
+Nx  = 32;     % number of space steps
+Ny  = 32;
+Nt  = 10;     % number of time steps
 CFL = 0.5;     % Courant–Friedrichs–Lewy
 
 % PREPROCESSING
@@ -45,16 +45,16 @@ fwrite(fil, P(:), 'double');
 fclose(fil);
 
 % initial Vx
-fil = fopen('Vx.dat', 'wb');
-fwrite(fil, Vx(:), 'double');
-fclose(fil);
+%fil = fopen('Vx.dat', 'wb');
+%fwrite(fil, Vx(:), 'double');
+%fclose(fil);
 
 % initial Vy
-fil = fopen('Vy.dat', 'wb');
-fwrite(fil, Vy(:), 'double');
-fclose(fil);
+%fil = fopen('Vy.dat', 'wb');
+%fwrite(fil, Vy(:), 'double');
+%fclose(fil);
 
-% ACTION LOOP
+% CPU CALCULATION
 for it = 1 : Nt
   % velocity divergence
   divV                = diff(Vx,1,1)/dX + diff(Vy,1,2)/dY;
@@ -65,12 +65,37 @@ for it = 1 : Nt
   Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) + (diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY)    * dt;
   Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) + (diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX)    * dt;
 % POSTPROCESSING
-  if mod(it, 10) == 0
-    pcolor(x, y, P)
-    title(it)
-    shading flat
-    colorbar
-    axis image        % square image
-    drawnow
-  end
-end
+  %if mod(it, 10) == 0
+  %  pcolor(x, y, P)
+  %  title(it)
+  %  shading flat
+  %  colorbar
+  %  axis image        % square image
+  %  drawnow
+  %end
+endfor
+
+% GPU CALCULATION
+%system(['nvcc -DNGRID=',int2str(ngrid),' -DNT=',int2str(nt),' -DNPARS=',int2str(length(pa)),' Wave2d_2020_06_04.cu']);
+system(['nvcc boundary_problem.cu']);
+system(['a.exe']);
+
+fil = fopen('Pc.dat', 'rb');
+Pc = fread(fil, 'double');
+fclose(fil);
+Pc = reshape(Pc, Nx, Ny);
+
+diffP = P - Pc;
+
+% POSTPROCESSING
+subplot(2,1,1)
+imagesc(P)
+colorbar
+title('P')
+axis image
+
+subplot(2,1,2)
+imagesc(Pc)
+colorbar
+title('Pc')
+axis image
