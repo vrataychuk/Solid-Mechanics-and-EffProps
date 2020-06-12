@@ -172,6 +172,11 @@ int main() {
   fwrite(P_cpu, sizeof(double), nX * nY, P_filw);
   fclose(P_filw);
 
+  cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
+  FILE* Vx_filw = fopen("Vxc.dat", "wb");
+  fwrite(Vx_cpu, sizeof(double), (nX + 1) * nY, Vx_filw);
+  fclose(Vx_filw);
+
   free(pa_cpu);
   free(P_cpu);
   free(Vx_cpu);

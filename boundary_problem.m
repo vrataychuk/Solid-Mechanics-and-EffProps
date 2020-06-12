@@ -11,7 +11,7 @@ G   = 0.5;     % shear modulus
 Nx  = 32;     % number of space steps
 Ny  = 32;
 Nt  = 10;     % number of time steps
-CFL = 0.5;     % Courant–Friedrichs–Lewy
+CFL = 0.5;     % Courantï¿½Friedrichsï¿½Lewy
 
 % PREPROCESSING
 dX     = Lx / (Nx - 1);                                   % space step
@@ -77,25 +77,43 @@ endfor
 
 % GPU CALCULATION
 %system(['nvcc -DNGRID=',int2str(ngrid),' -DNT=',int2str(nt),' -DNPARS=',int2str(length(pa)),' Wave2d_2020_06_04.cu']);
-system(['nvcc boundary_problem.cu']);
-system(['a.exe']);
+%system(['nvcc boundary_problem.cu']);
+%system(['a.exe']);
 
 fil = fopen('Pc.dat', 'rb');
 Pc = fread(fil, 'double');
 fclose(fil);
 Pc = reshape(Pc, Nx, Ny);
 
+fil = fopen('Vxc.dat', 'rb');
+Vxc = fread(fil, 'double');
+fclose(fil);
+Vxc = reshape(Vxc, Nx + 1, Ny);
+
 diffP = P - Pc;
+diffVx = Vx - Vxc;
 
 % POSTPROCESSING
-subplot(2,1,1)
+subplot(2,2,1)
 imagesc(P)
 colorbar
 title('P')
 axis image
 
-subplot(2,1,2)
-imagesc(Pc)
+subplot(2,2,2)
+imagesc(diffP)
 colorbar
 title('Pc')
+axis image
+
+subplot(2,2,3)
+imagesc(Vx)
+colorbar
+title('Vx')
+axis image
+
+subplot(2,2,4)
+imagesc(diffVx)
+colorbar
+title('Vxc')
 axis image
