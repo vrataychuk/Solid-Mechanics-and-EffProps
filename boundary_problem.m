@@ -21,15 +21,16 @@ CFL = 0.5;     % Courant-Friedrichs-Lewy
 dX     = Lx / (Nx - 1);                                   % space step
 dY     = Ly / (Ny - 1);
 x      = (-Lx / 2) : dX : (Lx / 2);                       % space discretization
-y      = (-Ly/2) : dY : (Ly/2);
+y      = (-Ly / 2) : dY : (Ly / 2);
 [x, y] = ndgrid(x, y);                                    % 2D mesh
 dt     = CFL * min(dX, dY) / sqrt( (K + 4*G/3) / rho);    % time step
 damp   = 4 / dt / Nx;
 
 % INITIAL CONDITIONS
-P     = zeros(Nx, Ny);
-P     = exp(-x .* x - y .* y);    % hydrostatic stress (ball part of tensor)
-P0    = P;                        % initial hydrostatic stress
+P0    = zeros(Nx, Ny);            % initial hydrostatic stress
+P0    = exp(-x .* x - y .* y);    % hydrostatic stress (ball part of tensor)
+Ux    = zeros(Nx + 1, Ny);        % displacement
+Uy    = zeros(Nx, Ny + 1);
 Vx    = zeros(Nx + 1, Ny);        % velocity
 Vy    = zeros(Nx, Ny + 1);
 tauxx = zeros(Nx, Ny);            % deviatoric stress
@@ -61,18 +62,24 @@ fclose(fil);
 
 % CPU CALCULATION
 for it = 1 : Nt
-  % velocity divergence
-  divV                = diff(Vx,1,1) / dX + diff(Vy,1,2) / dY;
+  % displacement divergence
+  divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
+  
   % constitutive equation - Hooke's law
-  P     = P     + (-divV * K) * dt;
-  tauxx = tauxx + ((diff(Vx,1,1)/dX - divV/3.0) * G * 2.0) * dt;
-  tauyy = tauyy + ((diff(Vy,1,2)/dY - divV/3.0) * G * 2.0) * dt;
-  tauxy = tauxy + ((diff(Vx(2:end-1,:), 1, 2)/dY + diff(Vy(:,2:end-1), 1, 1)/dX) * G) * dt;
+  P     = P0 - K * divU;
+  tauxx = 2.0 * G * (diff(Ux,1,1)/dX - divU/3.0);
+  tauyy = 2.0 * G * (diff(Uy,1,2)/dY - divU/3.0);
+  tauxy = G * (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
+  
   % motion equation
   dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
   Vx(2:end-1,2:end-1) = Vx(2:end-1,2:end-1) * (1 - dt * damp) + dVxdt * dt;
   dVydt = diff(-P(2:end-1,:) + tauyy(2:end-1,:), 1, 2)/dY / rho + diff(tauxy,1,1)/dX;
   Vy(2:end-1,2:end-1) = Vy(2:end-1,2:end-1) * (1 - dt * damp) + dVydt * dt;
+  
+  % displacements
+  Ux = Ux + Vx * dt;
+  Uy = Uy + Vy * dt;
   
 % POSTPROCESSING
   %if mod(it, 10) == 0
