@@ -5,9 +5,9 @@
 #include <fstream>
 #include "cuda.h"
 
-#define NGRID  1
-#define NPARS  6
-#define NT  10
+#define NGRID 2
+#define NPARS 7
+#define NT    10000
 
 __global__ void ComputeV(double* Vx, double* Vy, 
                          double* P,
@@ -20,18 +20,19 @@ __global__ void ComputeV(double* Vx, double* Vy,
 
   const double dX = pa[0], dY = pa[1];
   const double dT = pa[2];
-  const double /*K = pa[3], G = pa[4],*/ rho = pa[5];
+  const double rho = pa[5];
+  const double damp = pa[6];
 
   // motion equation
   if (i > 0 && i < nX && j > 0 && j < nY - 1) {
-    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] + (dT / rho) * ( (
+    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] * (1.0 - dT * damp) + (dT / rho) * ( (
                            -P[j * nX + i] + P[j * nX + i - 1] + tauXX[j * nX + i] - tauXX[j * nX + i - 1]
                            ) / dX + (
                            tauXY[j * (nX - 1) + i - 1] - tauXY[(j - 1) * (nX - 1) + i - 1]
                            ) / dY );
   }
   if (i > 0 && i < nX - 1 && j > 0 && j < nY) {
-    Vy[j * nX + i] = Vy[j * nX + i] + (dT / rho) * ( (
+    Vy[j * nX + i] = Vy[j * nX + i] * (1.0 - dT * damp) + (dT / rho) * ( (
                      -P[j * nX + i] + P[(j - 1) * nX + i] + tauYY[j * nX + i] - tauYY[(j - 1) * nX + i]
                      ) / dY + (
                      tauXY[(j - 1) * (nX - 1) + i] - tauXY[(j - 1) * (nX - 1) + i - 1]
@@ -50,7 +51,7 @@ __global__ void ComputeSigma(double* Vx, double* Vy,
 
   const double dX = pa[0], dY = pa[1];
   const double dT = pa[2];
-  const double K = pa[3], G = pa[4]/*, rho = pa[5]*/;
+  const double K = pa[3], G = pa[4];
 
   // constitutive equation - Hooke's law
   P[j * nX + i] = P[j * nX + i] + (-K * ( 
@@ -178,8 +179,8 @@ int main() {
     ComputeV<<<grid, block>>>(Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
     cudaDeviceSynchronize();    // wait for compute device to finish
 
-    cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
-    std::cout << "Vx on step " << it << " is " << Vx_cpu[nY/2 * (nX + 1) + nX/2] << std::endl;
+    /*cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
+    std::cout << "Vx on step " << it << " is " << Vx_cpu[nY/2 * (nX + 1) + nX/2] << std::endl;*/
   }
 
   /* OUTPUT DATA WRITING */

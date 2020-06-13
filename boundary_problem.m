@@ -11,10 +11,11 @@ rho = 1.0;     % density
 G   = 0.5;     % shear modulus
 
 % NUMERICS
-Nx  = 32;     % number of space steps
-Ny  = 32;
-Nt  = 10;     % number of time steps
-CFL = 0.5;     % Courant�Friedrichs�Lewy
+nGrid = 2;
+Nx  = 32 * nGrid;     % number of space steps
+Ny  = 32 * nGrid;
+Nt  = 10000;     % number of time steps
+CFL = 0.5;     % Courant-Friedrichs-Lewy
 
 % PREPROCESSING
 dX     = Lx / (Nx - 1);                                   % space step
@@ -36,7 +37,7 @@ tauyy = zeros(Nx, Ny);
 tauxy = zeros(Nx - 1, Ny - 1);
 
 % INPUT FILES
-pa = [dX, dY, dt, K, G, rho];
+pa = [dX, dY, dt, K, G, rho, damp];
 
 % parameters
 fil = fopen('pa.dat', 'wb');
@@ -118,17 +119,17 @@ axis image
 subplot(2,2,2)
 imagesc(diffTauXY)
 colorbar
-title('tauXYc')
+title('diffTauXY')
 axis image
 
 subplot(2,2,3)
-imagesc(Vx)
+imagesc(P)
 colorbar
-title('Vx')
+title('P')
 axis image
 
 subplot(2,2,4)
-imagesc(diffVx)
+imagesc(diffP)
 colorbar
-title('Vxc')
+title('diffP')
 axis image
