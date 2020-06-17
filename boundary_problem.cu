@@ -77,6 +77,17 @@ __global__ void ComputeStress(const double* const Ux, const double* const Uy,
   }
 }
 
+void SetMatrixZero(double** A_cpu, double** A_cuda, const int m, const int n) {
+  *A_cpu = (double*)malloc(m * n * sizeof(double));
+  for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+      (*A_cpu)[j * m + i] = 0.0;
+    }
+  }
+  cudaMalloc(A_cuda, m * n * sizeof(double));
+  cudaMemcpy(*A_cuda, *A_cpu, m * n * sizeof(double), cudaMemcpyHostToDevice);
+}
+
 int main() {
   dim3 grid, block;
   block.x = 32; 
@@ -110,54 +121,24 @@ int main() {
 
   // stress
   double* P0_cuda;
-  double* P0_cpu = (double*)malloc(nX * nY * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY; j++) {
-      P0_cpu[j * nX + i] = 0.0;
-    }
-  }
-  cudaMalloc(&P0_cuda, nX * nY * sizeof(double));
-  cudaMemcpy(P0_cuda, P0_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* P0_cpu;
+  SetMatrixZero(&P0_cpu, &P0_cuda, nX, nY);
 
   double* P_cuda;
-  double* P_cpu = (double*)malloc(nX * nY * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY; j++) {
-      P_cpu[j * nX + i] = 0.0;
-    }
-  }
-  cudaMalloc(&P_cuda, nX * nY * sizeof(double));
-  cudaMemcpy(P_cuda, P_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* P_cpu;
+  SetMatrixZero(&P_cpu, &P_cuda, nX, nY);
 
   double* tauXX_cuda;
-  double* tauXX_cpu = (double*)malloc(nX * nY * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY; j++) {
-      tauXX_cpu[j * nX + i] = 0.0;
-    }
-  }
-  cudaMalloc(&tauXX_cuda, nX * nY * sizeof(double));
-  cudaMemcpy(tauXX_cuda, tauXX_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* tauXX_cpu;
+  SetMatrixZero(&tauXX_cpu, &tauXX_cuda, nX, nY);
 
   double* tauYY_cuda;
-  double* tauYY_cpu = (double*)malloc(nX * nY * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY; j++) {
-      tauYY_cpu[j * nX + i] = 0.0;
-    }
-  }
-  cudaMalloc(&tauYY_cuda, nX * nY * sizeof(double));
-  cudaMemcpy(tauYY_cuda, tauYY_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* tauYY_cpu;
+  SetMatrixZero(&tauYY_cpu, &tauYY_cuda, nX, nY);
 
   double* tauXY_cuda;
-  double* tauXY_cpu = (double*)malloc((nX - 1) * (nY - 1) * sizeof(double));
-  for (int i = 0; i < nX - 1; i++) {
-    for (int j = 0; j < nY - 1; j++) {
-      tauXY_cpu[j * (nX - 1) + i] = 0.0;
-    }
-  }
-  cudaMalloc(&tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double));
-  cudaMemcpy(tauXY_cuda, tauXY_cpu, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyHostToDevice);
+  double* tauXY_cpu;
+  SetMatrixZero(&tauXY_cpu, &tauXY_cuda, nX - 1, nY - 1);
 
   // displacement
   const double dX = pa_cpu[0], dY = pa_cpu[1];
@@ -187,24 +168,12 @@ int main() {
 
   // velocity
   double* Vx_cuda;
-  double* Vx_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
-  for (int i = 0; i < nX + 1; i++) {
-    for (int j = 0; j < nY; j++) {
-      Vx_cpu[j * (nX + 1) + i] = 0.0;
-    }
-  }
-  cudaMalloc(&Vx_cuda, (nX + 1) * nY * sizeof(double));
-  cudaMemcpy(Vx_cuda, Vx_cpu, (nX + 1) * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* Vx_cpu;
+  SetMatrixZero(&Vx_cpu, &Vx_cuda, nX + 1, nY);
 
   double* Vy_cuda;
-  double* Vy_cpu = (double*)malloc(nX * (nY + 1) * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY + 1; j++) {
-      Vy_cpu[j * nX + i] = 0.0;
-    }
-  }
-  cudaMalloc(&Vy_cuda, nX * (nY + 1) * sizeof(double));
-  cudaMemcpy(Vy_cuda, Vy_cpu, nX * (nY + 1) * sizeof(double), cudaMemcpyHostToDevice);
+  double* Vy_cpu;
+  SetMatrixZero(&Vy_cpu, &Vy_cuda, nX, nY + 1);
 
   //std::cout << "Before loop...\n";
 
