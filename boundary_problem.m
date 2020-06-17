@@ -158,3 +158,8 @@ imagesc(diffP)
 colorbar
 title('diffP')
 axis image
+
+GetSigma = [0 0 0];
+GetSigma(1) = mean(tauxx(:) - P(:))
+GetSigma(2) = mean(tauyy(:) - P(:))
+GetSigma(3) = mean(tauxy(:))
