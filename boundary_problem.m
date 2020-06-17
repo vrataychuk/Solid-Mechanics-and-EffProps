@@ -23,12 +23,14 @@ dY     = Ly / (Ny - 1);
 x      = (-Lx / 2) : dX : (Lx / 2);                       % space discretization
 y      = (-Ly / 2) : dY : (Ly / 2);
 [x, y] = ndgrid(x, y);                                    % 2D mesh
+[xUx, yUx] = ndgrid((-(Lx + dX)/2) : dX : ((Lx + dX)/2), (-Ly/2) : dY : (Ly/2));
+[xUy, yUy] = ndgrid((-Lx/2) : dX : (Lx/2), (-(Ly+dY)/2) : dY : ((Ly+dY)/2));
 dt     = CFL * min(dX, dY) / sqrt( (K + 4*G/3) / rho);    % time step
 damp   = 4 / dt / Nx;
 
 % INITIAL CONDITIONS
 P0    = zeros(Nx, Ny);            % initial hydrostatic stress
-P0    = exp(-x .* x - y .* y);    % hydrostatic stress (ball part of tensor)
+%P0    = exp(-x .* x - y .* y);    % hydrostatic stress (ball part of tensor)
 Ux    = zeros(Nx + 1, Ny);        % displacement
 Uy    = zeros(Nx, Ny + 1);
 Vx    = zeros(Nx + 1, Ny);        % velocity
@@ -36,6 +38,13 @@ Vy    = zeros(Nx, Ny + 1);
 tauxx = zeros(Nx, Ny);            % deviatoric stress
 tauyy = zeros(Nx, Ny);
 tauxy = zeros(Nx - 1, Ny - 1);
+
+% BOUNDARY CONDITIONS
+dUxdx = 0.0;
+dUydy = 0.002;
+dUxdy = 0.0;
+Ux = Ux + (dUxdx * xUx + dUxdy * yUx);
+Uy = Uy + dUydy * yUy;
 
 % INPUT FILES
 pa = [dX, dY, dt, K, G, rho, damp];
@@ -82,15 +91,24 @@ for it = 1 : Nt
   Uy = Uy + Vy * dt;
   
 % POSTPROCESSING
-  %if mod(it, 10) == 0
-  %  pcolor(x, y, P)
-  %  title(it)
-  %  shading flat
-  %  colorbar
-  %  axis image        % square image
-  %  drawnow
-  %end
-endfor
+  if mod(it, 100) == 0
+    subplot(2, 1, 1)
+    pcolor(x, y, diff(Ux,1,1)/dX)
+    title(it)
+    shading flat
+    colorbar
+    axis image        % square image
+    
+    subplot(2, 1, 2)
+    pcolor(x, y, diff(Uy,1,2)/dY)
+    title(it)
+    shading flat
+    colorbar
+    axis image        % square image
+    
+    drawnow
+  end
+end
 
 % GPU CALCULATION
 %system(['nvcc -DNGRID=',int2str(ngrid),' -DNT=',int2str(nt),' -DNPARS=',int2str(length(pa)),' Wave2d_2020_06_04.cu']);
