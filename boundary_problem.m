@@ -120,10 +120,10 @@ Pc = fread(fil, 'double');
 fclose(fil);
 Pc = reshape(Pc, Nx, Ny);
 
-fil = fopen('Vxc.dat', 'rb');
-Vxc = fread(fil, 'double');
+fil = fopen('Uyc.dat', 'rb');
+Uyc = fread(fil, 'double');
 fclose(fil);
-Vxc = reshape(Vxc, Nx + 1, Ny);
+Uyc = reshape(Uyc, Nx, Ny + 1);
 
 fil = fopen('tauXYc.dat', 'rb');
 tauXYc = fread(fil, 'double');
@@ -131,20 +131,20 @@ fclose(fil);
 tauXYc = reshape(tauXYc, Nx - 1, Ny - 1);
 
 diffP = P - Pc;
-diffVx = Vx - Vxc;
+diffUy = Uy - Uyc;
 diffTauXY = tauxy - tauXYc;
 
 % POSTPROCESSING
 subplot(2,2,1)
-imagesc(tauxy)
+imagesc(Uy)
 colorbar
-title('tauXY')
+title('Uy')
 axis image
 
 subplot(2,2,2)
-imagesc(diffTauXY)
+imagesc(diffUy)
 colorbar
-title('diffTauXY')
+title('diffUy')
 axis image
 
 subplot(2,2,3)

@@ -160,11 +160,16 @@ int main() {
   cudaMemcpy(tauXY_cuda, tauXY_cpu, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyHostToDevice);
 
   // displacement
+  const double dX = pa_cpu[0], dY = pa_cpu[1];
+  const double dUxdx = 0.0;
+  const double dUydy = 0.002;
+  const double dUxdy = 0.0;
+
   double* Ux_cuda;
   double* Ux_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
   for (int i = 0; i < nX + 1; i++) {
     for (int j = 0; j < nY; j++) {
-      Ux_cpu[j * (nX + 1) + i] = 0.0;
+      Ux_cpu[j * (nX + 1) + i] = (-0.5 * dX * nX + dX * i) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy;
     }
   }
   cudaMalloc(&Ux_cuda, (nX + 1) * nY * sizeof(double));
@@ -174,7 +179,7 @@ int main() {
   double* Uy_cpu = (double*)malloc(nX * (nY + 1) * sizeof(double));
   for (int i = 0; i < nX; i++) {
     for (int j = 0; j < nY + 1; j++) {
-      Uy_cpu[j * nX + i] = 0.0;
+      Uy_cpu[j * nX + i] = (-0.5 * dY * nY + dY * j) * dUydy;
     }
   }
   cudaMalloc(&Uy_cuda, nX * (nY + 1) * sizeof(double));
@@ -217,15 +222,14 @@ int main() {
 
   /* OUTPUT DATA WRITING */
   cudaMemcpy(P_cpu, P_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
-
   FILE* P_filw = fopen("Pc.dat", "wb");
   fwrite(P_cpu, sizeof(double), nX * nY, P_filw);
   fclose(P_filw);
 
-  cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
-  FILE* Vx_filw = fopen("Vxc.dat", "wb");
-  fwrite(Vx_cpu, sizeof(double), (nX + 1) * nY, Vx_filw);
-  fclose(Vx_filw);
+  cudaMemcpy(Uy_cpu, Uy_cuda, nX * (nY + 1) * sizeof(double), cudaMemcpyDeviceToHost);
+  FILE* Uy_filw = fopen("Uyc.dat", "wb");
+  fwrite(Uy_cpu, sizeof(double), nX * (nY + 1), Uy_filw);
+  fclose(Uy_filw);
 
   cudaMemcpy(tauXY_cpu, tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyDeviceToHost);
   FILE* tauXY_filw = fopen("tauXYc.dat", "wb");
