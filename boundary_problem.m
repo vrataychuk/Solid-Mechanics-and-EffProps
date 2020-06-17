@@ -91,24 +91,24 @@ for it = 1 : Nt
   Uy = Uy + Vy * dt;
   
 % POSTPROCESSING
-  if mod(it, 100) == 0
-    subplot(2, 1, 1)
-    pcolor(x, y, diff(Ux,1,1)/dX)
-    title(it)
-    shading flat
-    colorbar
-    axis image        % square image
-    
-    subplot(2, 1, 2)
-    pcolor(x, y, diff(Uy,1,2)/dY)
-    title(it)
-    shading flat
-    colorbar
-    axis image        % square image
-    
-    drawnow
-  end
-end
+%  if mod(it, 100) == 0
+%    subplot(2, 1, 1)
+%    pcolor(x, y, diff(Ux,1,1)/dX)
+%    title(it)
+%    shading flat
+%    colorbar
+%    axis image        % square image
+%    
+%    subplot(2, 1, 2)
+%    pcolor(x, y, diff(Uy,1,2)/dY)
+%    title(it)
+%    shading flat
+%    colorbar
+%    axis image        % square image
+%    
+%    drawnow
+%  endif
+endfor
 
 % GPU CALCULATION
 %system(['nvcc -DNGRID=',int2str(ngrid),' -DNT=',int2str(nt),' -DNPARS=',int2str(length(pa)),' Wave2d_2020_06_04.cu']);
