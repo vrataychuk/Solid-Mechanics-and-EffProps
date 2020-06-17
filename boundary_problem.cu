@@ -111,13 +111,11 @@ int main() {
   // stress
   double* P0_cuda;
   double* P0_cpu = (double*)malloc(nX * nY * sizeof(double));
-  FILE* P0_fil = fopen("P0.dat", "rb");
-  if (!P0_fil) {
-    std::cerr << "Error! Cannot open file P0.dat!\n";
-    return 1;
+  for (int i = 0; i < nX; i++) {
+    for (int j = 0; j < nY; j++) {
+      P0_cpu[j * nX + i] = 0.0;
+    }
   }
-  fread(P0_cpu, sizeof(double), nX * nY, P0_fil);
-  fclose(P0_fil);
   cudaMalloc(&P0_cuda, nX * nY * sizeof(double));
   cudaMemcpy(P0_cuda, P0_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
 
