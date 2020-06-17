@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
 #include "cuda.h"
 
 #define NGRID 2
@@ -201,6 +202,31 @@ int main() {
   SaveMatrix(P_cpu, P_cuda, nX, nY, "Pc.dat");
   SaveMatrix(Uy_cpu, Uy_cuda, nX, nY + 1, "Uyc.dat");
   SaveMatrix(tauXY_cpu, tauXY_cuda, nX - 1, nY - 1, "tauXYc.dat");
+
+  /* AVERAGING */
+  cudaMemcpy(P_cpu, P_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+  cudaMemcpy(tauXX_cpu, tauXX_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+  cudaMemcpy(tauYY_cpu, tauYY_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+  cudaMemcpy(tauXY_cpu, tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyDeviceToHost);
+
+  std::vector<double> Sigma(3, 0.0);
+  for (int i = 0; i < nX; i++) {
+    for (int j = 0; j < nY; j++) {
+      Sigma[0] += tauXX_cpu[j * nX + i] - P_cpu[j * nX + i];
+      Sigma[1] += tauYY_cpu[j * nX + i] - P_cpu[j * nX + i];
+    }
+  }
+  Sigma[0] /= nX * nY;
+  Sigma[1] /= nX * nY;
+
+  for (int i = 0; i < nX - 1; i++) {
+    for (int j = 0; j < nY - 1; j++) {
+      Sigma[2] += tauXY_cpu[j * (nX - 1) + i];
+    }
+  }
+  Sigma[2] /= (nX - 1) * (nY - 1);
+
+  std::cout << Sigma[0] << '\n' << Sigma[1] << '\n' << Sigma[2] << std::endl;
 
   free(pa_cpu);
   free(P0_cpu);
