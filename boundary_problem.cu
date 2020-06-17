@@ -3,6 +3,7 @@
 #include "stdlib.h"
 #include <iostream>
 #include <fstream>
+#include <string>
 #include "cuda.h"
 
 #define NGRID 2
@@ -86,6 +87,13 @@ void SetMatrixZero(double** A_cpu, double** A_cuda, const int m, const int n) {
   }
   cudaMalloc(A_cuda, m * n * sizeof(double));
   cudaMemcpy(*A_cuda, *A_cpu, m * n * sizeof(double), cudaMemcpyHostToDevice);
+}
+
+void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, const int n, const std::string filename) {
+  cudaMemcpy(A_cpu, A_cuda, m * n * sizeof(double), cudaMemcpyDeviceToHost);
+  FILE* A_filw = fopen(filename.c_str(), "wb");
+  fwrite(A_cpu, sizeof(double), m * n, A_filw);
+  fclose(A_filw);
 }
 
 int main() {
@@ -190,20 +198,9 @@ int main() {
   }
 
   /* OUTPUT DATA WRITING */
-  cudaMemcpy(P_cpu, P_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
-  FILE* P_filw = fopen("Pc.dat", "wb");
-  fwrite(P_cpu, sizeof(double), nX * nY, P_filw);
-  fclose(P_filw);
-
-  cudaMemcpy(Uy_cpu, Uy_cuda, nX * (nY + 1) * sizeof(double), cudaMemcpyDeviceToHost);
-  FILE* Uy_filw = fopen("Uyc.dat", "wb");
-  fwrite(Uy_cpu, sizeof(double), nX * (nY + 1), Uy_filw);
-  fclose(Uy_filw);
-
-  cudaMemcpy(tauXY_cpu, tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyDeviceToHost);
-  FILE* tauXY_filw = fopen("tauXYc.dat", "wb");
-  fwrite(tauXY_cpu, sizeof(double), (nX - 1) * (nY - 1), tauXY_filw);
-  fclose(tauXY_filw);
+  SaveMatrix(P_cpu, P_cuda, nX, nY, "Pc.dat");
+  SaveMatrix(Uy_cpu, Uy_cuda, nX, nY + 1, "Uyc.dat");
+  SaveMatrix(tauXY_cpu, tauXY_cuda, nX - 1, nY - 1, "tauXYc.dat");
 
   free(pa_cpu);
   free(P0_cpu);
