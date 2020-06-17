@@ -9,11 +9,11 @@
 #define NPARS 7
 #define NT    10000
 
-__global__ void ComputeV(double* Vx, double* Vy, 
-                         double* P,
-                         double* tauXX, double* tauYY, double* tauXY,
-                         double* pa,
-                         const long int nX, const long int nY) {
+__global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy, 
+                            const double* const P,
+                            const double* const tauXX, const double* const tauYY, const double* const tauXY,
+                            const double* const pa,
+                            const long int nX, const long int nY) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -38,39 +38,42 @@ __global__ void ComputeV(double* Vx, double* Vy,
                      tauXY[(j - 1) * (nX - 1) + i] - tauXY[(j - 1) * (nX - 1) + i - 1]
                      ) / dX );
   }
+
+  Ux[j * (nX + 1) + i] = Ux[j * (nX + 1) + i] + Vx[j * (nX + 1) + i] * dT;
+  Uy[j * nX + i] = Uy[j * nX + i] + Vy[j * nX + i] * dT;
 }
 
-__global__ void ComputeSigma(double* Vx, double* Vy, 
-                             double* P,
-                             double* tauXX, double* tauYY, double* tauXY,
-                             double* pa,
-                             const long int nX, const long int nY) {
+__global__ void ComputeStress(const double* const Ux, const double* const Uy, 
+                              const double* const P0, double* P,
+                              double* tauXX, double* tauYY, double* tauXY,
+                              const double* const pa,
+                              const long int nX, const long int nY) {
 
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
 
   const double dX = pa[0], dY = pa[1];
-  const double dT = pa[2];
+  //const double dT = pa[2];
   const double K = pa[3], G = pa[4];
 
   // constitutive equation - Hooke's law
-  P[j * nX + i] = P[j * nX + i] + (-K * ( 
-                  (Vx[j * (nX + 1) + i + 1] - Vx[j * (nX + 1) + i]) / dX + (Vy[(j + 1) * nX + i] - Vy[j * nX + i]) / dY    // divV
-                  ) ) * dT;
+  P[j * nX + i] = P0[j * nX + i] - K * ( 
+                  (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY    // divU
+                  );
 
-  tauXX[j * nX + i] = tauXX[j * nX + i] + 2.0 * G * (
-                      (Vx[j * (nX + 1) + i + 1] - Vx[j * (nX + 1) + i]) / dX -    // dVdx
-                      ( (Vx[j * (nX + 1) + i + 1] - Vx[j * (nX + 1) + i]) / dX + (Vy[(j + 1) * nX + i] - Vy[j * nX + i]) / dY ) / 3.0    // divV / 3.0
-                      ) * dT;
-  tauYY[j * nX + i] = tauYY[j * nX + i] + 2.0 * G * (
-                      (Vy[(j + 1) * nX + i] - Vy[j * nX + i]) / dY -    // dVdy
-                      ( (Vx[j * (nX + 1) + i + 1] - Vx[j * (nX + 1) + i]) / dX + (Vy[(j + 1) * nX + i] - Vy[j * nX + i]) / dY ) / 3.0    // divV / 3.0
-                      ) * dT;
+  tauXX[j * nX + i] = 2.0 * G * (
+                      (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX -    // dUx/dx
+                      ( (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY ) / 3.0    // divU / 3.0
+                      );
+  tauYY[j * nX + i] = 2.0 * G * (
+                      (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY -    // dUy/dy
+                      ( (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY ) / 3.0    // divU / 3.0
+                      );
 
   if (i < nX - 1 && j < nY - 1) {
-    tauXY[j * (nX - 1) + i] = tauXY[j * (nX - 1) + i] + G * (
-                              (Vx[(j + 1) * (nX + 1) + i + 1] - Vx[j * (nX + 1) + i + 1]) / dY + (Vy[(j + 1) * nX + i + 1] - Vy[(j + 1) * nX + i]) / dX
-                              ) * dT;
+    tauXY[j * (nX - 1) + i] = G * (
+                              (Ux[(j + 1) * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i + 1]) / dY + (Uy[(j + 1) * nX + i + 1] - Uy[(j + 1) * nX + i]) / dX    // dUx/dy + dUy/dx
+                              );
   }
 }
 
@@ -106,15 +109,25 @@ int main() {
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
 
   // stress
-  double* P_cuda;
-  double* P_cpu = (double*)malloc(nX * nY * sizeof(double));
-  FILE* P_fil = fopen("P.dat", "rb");
-  if (!P_fil) {
-    std::cerr << "Error! Cannot open file P.dat!\n";
+  double* P0_cuda;
+  double* P0_cpu = (double*)malloc(nX * nY * sizeof(double));
+  FILE* P0_fil = fopen("P0.dat", "rb");
+  if (!P0_fil) {
+    std::cerr << "Error! Cannot open file P0.dat!\n";
     return 1;
   }
-  fread(P_cpu, sizeof(double), nX * nY, P_fil);
-  fclose(P_fil);
+  fread(P0_cpu, sizeof(double), nX * nY, P0_fil);
+  fclose(P0_fil);
+  cudaMalloc(&P0_cuda, nX * nY * sizeof(double));
+  cudaMemcpy(P0_cuda, P0_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+
+  double* P_cuda;
+  double* P_cpu = (double*)malloc(nX * nY * sizeof(double));
+  for (int i = 0; i < nX; i++) {
+    for (int j = 0; j < nY; j++) {
+      P_cpu[j * nX + i] = 0.0;
+    }
+  }
   cudaMalloc(&P_cuda, nX * nY * sizeof(double));
   cudaMemcpy(P_cuda, P_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
 
@@ -148,6 +161,27 @@ int main() {
   cudaMalloc(&tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double));
   cudaMemcpy(tauXY_cuda, tauXY_cpu, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyHostToDevice);
 
+  // displacement
+  double* Ux_cuda;
+  double* Ux_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
+  for (int i = 0; i < nX + 1; i++) {
+    for (int j = 0; j < nY; j++) {
+      Ux_cpu[j * (nX + 1) + i] = 0.0;
+    }
+  }
+  cudaMalloc(&Ux_cuda, (nX + 1) * nY * sizeof(double));
+  cudaMemcpy(Ux_cuda, Ux_cpu, (nX + 1) * nY * sizeof(double), cudaMemcpyHostToDevice);
+
+  double* Uy_cuda;
+  double* Uy_cpu = (double*)malloc(nX * (nY + 1) * sizeof(double));
+  for (int i = 0; i < nX; i++) {
+    for (int j = 0; j < nY + 1; j++) {
+      Uy_cpu[j * nX + i] = 0.0;
+    }
+  }
+  cudaMalloc(&Uy_cuda, nX * (nY + 1) * sizeof(double));
+  cudaMemcpy(Uy_cuda, Uy_cpu, nX * (nY + 1) * sizeof(double), cudaMemcpyHostToDevice);
+
   // velocity
   double* Vx_cuda;
   double* Vx_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
@@ -173,10 +207,10 @@ int main() {
 
   /* ACTION LOOP */
   for (int it = 0; it < NT; it++) {
-    ComputeSigma<<<grid, block>>>(Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
+    ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
     cudaDeviceSynchronize();    // wait for compute device to finish
     //std::cout << "After computing sigma...\n";
-    ComputeV<<<grid, block>>>(Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
+    ComputeDisp<<<grid, block>>>(Ux_cuda, Uy_cuda, Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
     cudaDeviceSynchronize();    // wait for compute device to finish
 
     /*cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
@@ -201,18 +235,24 @@ int main() {
   fclose(tauXY_filw);
 
   free(pa_cpu);
+  free(P0_cpu);
   free(P_cpu);
   free(tauXX_cpu);
   free(tauYY_cpu);
   free(tauXY_cpu);
+  free(Ux_cpu);
+  free(Uy_cpu);
   free(Vx_cpu);
   free(Vy_cpu);
 
   cudaFree(pa_cuda);
+  cudaFree(P0_cuda);
   cudaFree(P_cuda);
   cudaFree(tauXX_cuda);
   cudaFree(tauYY_cuda);
   cudaFree(tauXY_cuda);
+  cudaFree(Ux_cuda);
+  cudaFree(Uy_cuda);
   cudaFree(Vx_cuda);
   cudaFree(Vy_cuda);
 

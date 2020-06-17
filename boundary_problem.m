@@ -46,8 +46,8 @@ fwrite(fil, pa(:), 'double');
 fclose(fil);
 
 % initial pressure
-fil = fopen('P.dat', 'wb');
-fwrite(fil, P(:), 'double');
+fil = fopen('P0.dat', 'wb');
+fwrite(fil, P0(:), 'double');
 fclose(fil);
 
 % initial Vx
