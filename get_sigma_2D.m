@@ -56,12 +56,12 @@ function S = get_sigma_2D(loadValue, loadType)
   Uy = Uy + dUydy * yUy;
   
   % INPUT FILES
-  pa = [dX, dY, dt, K, G, rho, damp];
+  %pa = [dX, dY, dt, K, G, rho, damp];
 
   % parameters
-  fil = fopen('pa.dat', 'wb');
-  fwrite(fil, pa(:), 'double');
-  fclose(fil);
+  %fil = fopen('pa.dat', 'wb');
+  %fwrite(fil, pa(:), 'double');
+  %fclose(fil);
 
   % CPU CALCULATION
   for it = 1 : Nt
