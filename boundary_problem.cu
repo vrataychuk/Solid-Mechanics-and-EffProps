@@ -5,11 +5,12 @@
 #include <fstream>
 #include <string>
 #include <array>
+#include <chrono>
 #include "cuda.h"
 
-#define NGRID 2
+#define NGRID 7
 #define NPARS 7
-#define NT    10000
+#define NT    4000000
 
 __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy, 
                             const double* const P,
@@ -98,13 +99,19 @@ void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, co
   fclose(A_filw);
 }
 
-void SetMaterials(double* const K, double* const G, const int m, const int n) {
-  constexpr double E0 = 1.0;
-  constexpr double nu0 = 0.25;
+void SetMaterials(double* const K, double* const G, const int m, const int n, const double dX, const double dY) {
+  constexpr double E0 = 0.002;
+  constexpr double nu0 = 0.3;
+  constexpr double E1 = 2.0;
+  constexpr double nu1 = 0.2;
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < n; j++) {
       K[j * m + i] = E0 / (3.0 - 6.0 * nu0);
       G[j * m + i] = E0 / (2.0 + 2.0 * nu0);
+      if ( sqrt((-0.5 * dX * (m - 1) + dX * i) * (-0.5 * dX * (m - 1) + dX * i) + (-0.5 * dY * (n - 1) + dY * j) * (-0.5 * dY * (n - 1) + dY * j)) < 2.85459861019 ) {
+        K[j * m + i] = E1 / (3.0 - 6.0 * nu1);
+        G[j * m + i] = E1 / (2.0 + 2.0 * nu1);
+      }
     }
   }
 }
@@ -140,10 +147,12 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
 
+  const double dX = pa_cpu[0], dY = pa_cpu[1];
+
   // materials
   double* K_cpu = (double*)malloc(nX * nY * sizeof(double));
   double* G_cpu = (double*)malloc(nX * nY * sizeof(double));
-  SetMaterials(K_cpu, G_cpu, nX, nY);
+  SetMaterials(K_cpu, G_cpu, nX, nY, dX, dY);
   double* K_cuda;
   double* G_cuda;
   cudaMalloc(&K_cuda, nX * nY * sizeof(double));
@@ -173,7 +182,6 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   SetMatrixZero(&tauXY_cpu, &tauXY_cuda, nX - 1, nY - 1);
 
   // displacement
-  const double dX = pa_cpu[0], dY = pa_cpu[1];
   const double dUxdx = loadValue * loadType[0];
   const double dUydy = loadValue * loadType[1];
   const double dUxdy = loadValue * loadType[2];
@@ -282,6 +290,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
 }
 
 int main() {
+  const auto start = std::chrono::system_clock::now();
+
   constexpr double load_value = 0.002;
   const std::array<double, 3> Sxx = ComputeSigma(load_value, {1, 0, 0});
   const std::array<double, 3> Syy = ComputeSigma(load_value, {0, 1, 0});
@@ -302,4 +312,21 @@ int main() {
   std::cout << "C_2222 = " << C_2222 << '\n';
   std::cout << "C_1222 = " << C_1222 << '\n';
   std::cout << "C_1212 = " << C_1212 << '\n';
+
+  const auto end = std::chrono::system_clock::now();
+  const int elapsed_sec = static_cast<int>( std::chrono::duration_cast<std::chrono::seconds>(end - start).count() );
+  if (elapsed_sec < 60) {
+    std::cout << "Calculation time is " << elapsed_sec << " sec\n";
+  }
+  else {
+    const int elapsed_min = elapsed_sec / 60;
+    if (elapsed_min < 60) {
+      std::cout << "Calculation time is " << elapsed_min << " min " << elapsed_sec % 60 << " sec\n";
+    }
+    else {
+      std::cout << "Calculation time is " << elapsed_min / 60 << " hours " << elapsed_min % 60 << " min " << elapsed_sec % 60 << " sec\n";
+    }
+  }
+
+  return 0;
 }
