@@ -4,7 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <vector>
+#include <array>
 #include "cuda.h"
 
 #define NGRID 2
@@ -97,7 +97,7 @@ void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, co
   fclose(A_filw);
 }
 
-int main() {
+std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int, 3>& loadType) {
   dim3 grid, block;
   block.x = 32; 
   block.y = 32; 
@@ -119,7 +119,7 @@ int main() {
   FILE* pa_fil = fopen("pa.dat", "rb");
   if (!pa_fil) {
     std::cerr << "Error! Cannot open file pa.dat!\n";
-    return 1;
+    exit(1);
   }
   //pa_fil.read(pa_cpu, NPARS * sizeof(double));
   fread(pa_cpu, sizeof(double), NPARS, pa_fil);
@@ -151,9 +151,9 @@ int main() {
 
   // displacement
   const double dX = pa_cpu[0], dY = pa_cpu[1];
-  const double dUxdx = 0.0;
-  const double dUydy = 0.002;
-  const double dUxdy = 0.0;
+  const double dUxdx = loadValue * loadType[0];
+  const double dUydy = loadValue * loadType[1];
+  const double dUxdy = loadValue * loadType[2];
 
   double* Ux_cuda;
   double* Ux_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
@@ -209,7 +209,7 @@ int main() {
   cudaMemcpy(tauYY_cpu, tauYY_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
   cudaMemcpy(tauXY_cpu, tauXY_cuda, (nX - 1) * (nY - 1) * sizeof(double), cudaMemcpyDeviceToHost);
 
-  std::vector<double> Sigma(3, 0.0);
+  std::array<double, 3> Sigma = {0.0, 0.0, 0.0};
   for (int i = 0; i < nX; i++) {
     for (int j = 0; j < nY; j++) {
       Sigma[0] += tauXX_cpu[j * nX + i] - P_cpu[j * nX + i];
@@ -251,5 +251,28 @@ int main() {
   cudaFree(Vy_cuda);
 
   cudaDeviceReset();
-  return 0;
+  return Sigma;
+}
+
+int main() {
+  constexpr double load_value = 0.002;
+  const std::array<double, 3> Sxx = ComputeSigma(load_value, {1, 0, 0});
+  const std::array<double, 3> Syy = ComputeSigma(load_value, {0, 1, 0});
+  const std::array<double, 3> Sxy = ComputeSigma(load_value, {0, 0, 1});
+
+  const double C_1111 = Sxx[0] / load_value;
+  const double C_1122 = Sxx[1] / load_value;
+  const double C_1112 = Sxx[2] / load_value;
+
+  const double C_2222 = Syy[1] / load_value;
+  const double C_1222 = Syy[2] / load_value;
+
+  const double C_1212 = Sxy[2] / load_value;
+
+  std::cout << "C_1111 = " << C_1111 << '\n';
+  std::cout << "C_1122 = " << C_1122 << '\n';
+  std::cout << "C_1112 = " << C_1112 << '\n';
+  std::cout << "C_2222 = " << C_2222 << '\n';
+  std::cout << "C_1222 = " << C_1222 << '\n';
+  std::cout << "C_1212 = " << C_1212 << '\n';
 }
