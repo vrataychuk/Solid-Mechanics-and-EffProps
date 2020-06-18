@@ -6,11 +6,11 @@ function S = get_sigma_2D(loadValue, loadType)
   % PHYSICS
   Lx  = 10.0;                         % physical length
   Ly  = 10.0;                         % physical width
-  E   = 1.0;                          % Young's modulus
-  nu  = 0.25;                         % Poisson's ratio  
+  E0   = 1.0;                         % Young's modulus
+  nu0  = 0.25;                        % Poisson's ratio  
   rho = 1.0;                          % density
-  K   = E / (3.0 * (1 - 2 * nu));     % bulk modulus
-  G   = E / (2.0 + 2.0 * nu);         % shear modulus
+  K0   = E0 / (3.0 * (1 - 2 * nu0));  % bulk modulus
+  G0   = E0 / (2.0 + 2.0 * nu0);      % shear modulus
 
   % NUMERICS
   nGrid = 2;
@@ -27,8 +27,15 @@ function S = get_sigma_2D(loadValue, loadType)
   [x, y] = ndgrid(x, y);                                    % 2D mesh
   [xUx, yUx] = ndgrid((-(Lx + dX)/2) : dX : ((Lx + dX)/2), (-Ly/2) : dY : (Ly/2));
   [xUy, yUy] = ndgrid((-Lx/2) : dX : (Lx/2), (-(Ly+dY)/2) : dY : ((Ly+dY)/2));
-  dt     = CFL * min(dX, dY) / sqrt( (K + 4*G/3) / rho);    % time step
+  dt     = CFL * min(dX, dY) / sqrt( (K0 + 4*G0/3) / rho);    % time step
   damp   = 4 / dt / Nx;
+  
+  % MATERIALS
+  E = zeros(Nx, Ny);
+  nu = zeros(Nx, Ny);
+  [E, nu] = set_mats_2D(Nx, Ny);     % Young's modulus and Poisson's ratio
+  K = E ./ (3.0 * (1 - 2 * nu));     % bulk modulus
+  G = E ./ (2.0 + 2.0 * nu);         % shear modulus
 
   % INITIAL CONDITIONS
   P0    = zeros(Nx, Ny);            % initial hydrostatic stress
@@ -62,10 +69,10 @@ function S = get_sigma_2D(loadValue, loadType)
     divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
     
     % constitutive equation - Hooke's law
-    P     = P0 - K * divU;
-    tauxx = 2.0 * G * (diff(Ux,1,1)/dX - divU/3.0);
-    tauyy = 2.0 * G * (diff(Uy,1,2)/dY - divU/3.0);
-    tauxy = G * (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
+    P     = P0 - K .* divU;
+    tauxx = 2.0 * G .* (diff(Ux,1,1)/dX - divU/3.0);
+    tauyy = 2.0 * G .* (diff(Uy,1,2)/dY - divU/3.0);
+    tauxy = av4(G) .* (diff(Ux(2:end-1,:), 1, 2)/dY + diff(Uy(:,2:end-1), 1, 1)/dX);
     
     % motion equation
     dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho + diff(tauxy,1,2)/dY;
@@ -150,4 +157,4 @@ function S = get_sigma_2D(loadValue, loadType)
   S(1) = mean(tauxx(:) - P(:))
   S(2) = mean(tauyy(:) - P(:))
   S(3) = mean(tauxy(:))
-end
+endfunction
