@@ -45,7 +45,8 @@ __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy,
   Uy[j * nX + i] = Uy[j * nX + i] + Vy[j * nX + i] * dT;
 }
 
-__global__ void ComputeStress(const double* const Ux, const double* const Uy, 
+__global__ void ComputeStress(const double* const Ux, const double* const Uy,
+                              const double* const K, const double* const G,
                               const double* const P0, double* P,
                               double* tauXX, double* tauYY, double* tauXY,
                               const double* const pa,
@@ -56,24 +57,24 @@ __global__ void ComputeStress(const double* const Ux, const double* const Uy,
 
   const double dX = pa[0], dY = pa[1];
   //const double dT = pa[2];
-  const double K = pa[3], G = pa[4];
+  //const double K = pa[3], G = pa[4];
 
   // constitutive equation - Hooke's law
-  P[j * nX + i] = P0[j * nX + i] - K * ( 
+  P[j * nX + i] = P0[j * nX + i] - K[j * nX + i] * ( 
                   (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY    // divU
                   );
 
-  tauXX[j * nX + i] = 2.0 * G * (
+  tauXX[j * nX + i] = 2.0 * G[j * nX + i] * (
                       (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX -    // dUx/dx
                       ( (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY ) / 3.0    // divU / 3.0
                       );
-  tauYY[j * nX + i] = 2.0 * G * (
+  tauYY[j * nX + i] = 2.0 * G[j * nX + i] * (
                       (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY -    // dUy/dy
                       ( (Ux[j * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i]) / dX + (Uy[(j + 1) * nX + i] - Uy[j * nX + i]) / dY ) / 3.0    // divU / 3.0
                       );
 
   if (i < nX - 1 && j < nY - 1) {
-    tauXY[j * (nX - 1) + i] = G * (
+    tauXY[j * (nX - 1) + i] = 0.25 * (G[j * nX + i] + G[j * nX + i + 1] + G[(j + 1) * nX + i] + G[(j + 1) * nX + i + 1]) * (
                               (Ux[(j + 1) * (nX + 1) + i + 1] - Ux[j * (nX + 1) + i + 1]) / dY + (Uy[(j + 1) * nX + i + 1] - Uy[(j + 1) * nX + i]) / dX    // dUx/dy + dUy/dx
                               );
   }
@@ -97,6 +98,17 @@ void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, co
   fclose(A_filw);
 }
 
+void SetMaterials(double* const K, double* const G, const int m, const int n) {
+  constexpr double E0 = 1.0;
+  constexpr double nu0 = 0.25;
+  for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+      K[j * m + i] = E0 / (3.0 - 6.0 * nu0);
+      G[j * m + i] = E0 / (2.0 + 2.0 * nu0);
+    }
+  }
+}
+
 std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int, 3>& loadType) {
   dim3 grid, block;
   block.x = 32; 
@@ -111,7 +123,7 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   cudaDeviceReset();
   cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 
-  /* INPUT DATA READING */
+  /* INPUT DATA */
   // parameters
   double* pa_cuda;
   double* pa_cpu = (double*)malloc(NPARS * sizeof(double));
@@ -127,6 +139,17 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   fclose(pa_fil);
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
+
+  // materials
+  double* K_cpu = (double*)malloc(nX * nY * sizeof(double));
+  double* G_cpu = (double*)malloc(nX * nY * sizeof(double));
+  SetMaterials(K_cpu, G_cpu, nX, nY);
+  double* K_cuda;
+  double* G_cuda;
+  cudaMalloc(&K_cuda, nX * nY * sizeof(double));
+  cudaMalloc(&G_cuda, nX * nY * sizeof(double));
+  cudaMemcpy(K_cuda, K_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  cudaMemcpy(G_cuda, G_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
 
   // stress
   double* P0_cuda;
@@ -188,7 +211,7 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
 
   /* ACTION LOOP */
   for (int it = 0; it < NT; it++) {
-    ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
+    ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, K_cuda, G_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
     cudaDeviceSynchronize();    // wait for compute device to finish
     //std::cout << "After computing sigma...\n";
     ComputeDisp<<<grid, block>>>(Ux_cuda, Uy_cuda, Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
@@ -229,6 +252,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   std::cout << Sigma[0] << '\n' << Sigma[1] << '\n' << Sigma[2] << std::endl;
 
   free(pa_cpu);
+  free(K_cpu);
+  free(G_cpu);
   free(P0_cpu);
   free(P_cpu);
   free(tauXX_cpu);
@@ -240,6 +265,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   free(Vy_cpu);
 
   cudaFree(pa_cuda);
+  cudaFree(K_cuda);
+  cudaFree(G_cuda);
   cudaFree(P0_cuda);
   cudaFree(P_cuda);
   cudaFree(tauXX_cuda);
