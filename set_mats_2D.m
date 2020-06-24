@@ -1,8 +1,10 @@
-function [E, nu] = set_mats_2D(Nx, Ny, x, y)
-  E0 = 1.0;
-  nu0 = 0.25;
-  E = E0 * ones(Nx, Ny);
-  nu = nu0 * ones(Nx, Ny);
-  %E(sqrt(x.*x + y.*y) < 2.85459861019) = 2.0;
-  %nu(sqrt(x.*x + y.*y) < 2.85459861019) = 0.2;
+function [K, G] = set_mats_2D(Nx, Ny, x, y)
+  K0 = 1.0;
+  G0 = 1.0;
+  %E0 = 1.0;
+  %nu0 = 0.25;
+  K = K0 * ones(Nx, Ny);
+  G = G0 * ones(Nx, Ny);
+  K(sqrt(x.*x + y.*y) < 1.0) = 0.01 * K0;
+  G(sqrt(x.*x + y.*y) < 1.0) = 0.01 * G0;
 endfunction
