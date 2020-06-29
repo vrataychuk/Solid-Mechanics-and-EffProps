@@ -1,4 +1,4 @@
-function S = get_sigma_2D(loadValue, loadType, Nt)
+function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
   figure(1)
   clf
   colormap jet
@@ -12,13 +12,13 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
   K0   = E0 / (3.0 * (1 - 2 * nu0));  % bulk modulus
   G0   = E0 / (2.0 + 2.0 * nu0);      % shear modulus
   coh  = 0.001;
-  P0 = 0.5 * coh;
+  P0 = 1.0 * coh;
 
   % NUMERICS
   Nx  = 200;     % number of space steps
   Ny  = 200;
   %Nt  = 10;      % number of time steps
-  nIter = 500;
+  nIter = 20000;
   CFL = 0.125;     % Courant–Friedrichs–Lewy
 
   % PREPROCESSING
@@ -34,9 +34,6 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
   dampY   = 4.0 / dt / Ny;
   
   % MATERIALS
-  %E = zeros(Nx, Ny);
-  %nu = zeros(Nx, Ny);
-  %[E, nu] = set_mats_2D(Nx, Ny, x, y);     % Young's modulus and Poisson's ratio
   K = zeros(Nx, Ny); %E ./ (3.0 * (1 - 2 * nu));             % bulk modulus
   G = zeros(Nx, Ny); %E ./ (2.0 + 2.0 * nu);                 % shear modulus
   [K, G] = set_mats_2D(Nx, Ny, x, y);     % Young's modulus and Poisson's ratio
@@ -130,26 +127,28 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
     Plast(2:end, 2:end) = Plast(2:end, 2:end) + PlastXY;
     
     % cylindrical coorditate system
-    Sanrr(Plast > 0) = -P0 + sign(loadValue) * 2.0 * coh * log(sqrt(sqrt(x(Plast > 0) .* x(Plast > 0) + y(Plast > 0) .* y(Plast > 0) )));
+    Sanrr(Plast > 0) = -P0 + sign(loadValue) * 2.0 * coh * log(sqrt(sqrt(x(Plast > 0) .* x(Plast > 0) + y(Plast > 0) .* y(Plast > 0) ))) / sqrt(2);
     Sanrr(sqrt(x.*x + y.*y) < 1.0) = 0.0;
-    Sanff(Plast > 0) = -P0 + sign(loadValue) * 2.0 * coh * (log(sqrt(sqrt(x(Plast > 0) .* x(Plast > 0) + y(Plast > 0) .* y(Plast > 0)))) + 1.0);
+    Sanff(Plast > 0) = -P0 + sign(loadValue) * 2.0 * coh * (log(sqrt(sqrt(x(Plast > 0) .* x(Plast > 0) + y(Plast > 0) .* y(Plast > 0)))) + 1.0) / sqrt(2);
     Sanff(sqrt(x.*x + y.*y) < 1.0) = 0.0;
     
     sinsin = y ./ (sqrt(x.*x + y.*y));
     coscos = x ./ (sqrt(x.*x + y.*y));
     
+    %Snurr(Plast > 0) = tauxx(Plast > 0) - P(Plast > 0);
     Snurr(Plast > 0) = (tauxx(Plast > 0) - P(Plast > 0)) .* coscos(Plast > 0) .* coscos(Plast > 0) + ...
                         2.0 * tauxyAv(Plast > 0) .* sinsin(Plast > 0) .* coscos(Plast > 0) + ...
                         (tauyy(Plast > 0) - P(Plast > 0)) .* sinsin(Plast > 0) .* sinsin(Plast > 0);
     Snurr(sqrt(x.*x + y.*y) < 1.0) = 0.0;
     
+    %Snuff(Plast > 0) = tauyy(Plast > 0) - P(Plast > 0);
     Snuff(Plast > 0) = (tauxx(Plast > 0) - P(Plast > 0)) .* sinsin(Plast > 0) .* sinsin(Plast > 0) - ...
                         2.0 * tauxyAv(Plast > 0) .* sinsin(Plast > 0) .* coscos(Plast > 0) + ...
                         (tauyy(Plast > 0) - P(Plast > 0)) .* coscos(Plast > 0) .* coscos(Plast > 0);
     Snuff(sqrt(x.*x + y.*y) < 1.0) = 0.0;
     
   % POSTPROCESSING
-    if mod(it, 20) == 0
+    if mod(it, 1) == 0
       subplot(2, 2, 1)
       pcolor(x, y, Snurr) % diff(Ux, 1, 1)/dX )
       title("\sigma_{rr}")
@@ -170,14 +169,28 @@ function S = get_sigma_2D(loadValue, loadType, Nt)
       
       subplot(2, 2, 4)
       plot(x, 0.5 * (Sanff(:, Ny/2) + Sanff(:, Ny/2 - 1)), 'g', x, 0.5 * (Snuff(:, Ny/2) + Snuff(:, Ny/2 - 1)), 'r')
-      title("\sigma_{\phi \phi}")
+      %plot(x, 0.5 * (Sanrr(:, Ny/2) - Sanff(:, Ny/2)), 'g', x, 0.5 * (Snurr(:, Ny/2) - Snuff(:, Ny/2)), 'r')
+      title("\sigma_{rr} - \sigma_{\phi \phi}")
       
       drawnow
     endif
     
-    S(it, 1) = mean(tauxx(:) - P(:));
-    S(it, 2) = mean(tauyy(:) - P(:));
-    S(it, 3) = mean(tauxy(:));
+    deltaP = mean(tauxx(1, :) - P(1, :)) + mean(tauxx(end, :) - P(end, :)) + ...
+             mean(tauxx(:, 1) - P(:, 1)) + mean(tauxx(:, end) - P(:, end)) + ...
+             mean(tauyy(1, :) - P(1, :)) + mean(tauyy(end, :) - P(end, :)) + ...
+             mean(tauyy(:, 1) - P(:, 1)) + mean(tauyy(:, end) - P(:, end));
+    deltaP = deltaP * 0.125 / coh / sqrt(2)
+    
+    tauInfty = mean(tauxx(1, :) - tauyy(1, :)) + mean(tauxx(end, :) - tauyy(end, :)) + ...
+               mean(tauxx(:, 1) - tauyy(:, 1)) + mean(tauxx(:, end) - tauyy(:, end));
+    tauInfty = tauInfty * 0.25 / coh / sqrt(2)
+    
+    divUeff = loadValue * (loadType(1) + loadType(2));
+        
+    Keff(it) = -mean(P(:)) / (divUeff) / it * Nt
+    Geff(it, 1) = 0.5 * mean(tauxx(:)) / (loadValue * loadType(1) - divUeff / 3.0) / it * Nt
+    Geff(it, 2) = 0.5 * mean(tauyy(:)) / (loadValue * loadType(2) - divUeff / 3.0) / it * Nt
+    %Geff(it, 3) = mean(tauxy(:)) / (loadValue * loadType(1)) / it * Nt
   endfor
   
 endfunction
