@@ -11,14 +11,15 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
   rho0 = 1.0;                         % density
   K0   = E0 / (3.0 * (1 - 2 * nu0));  % bulk modulus
   G0   = E0 / (2.0 + 2.0 * nu0);      % shear modulus
-  coh  = 0.001;
+  coh  = 0.01;
   P0 = 1.0 * coh;
 
   % NUMERICS
   Nx  = 200;     % number of space steps
   Ny  = 200;
   %Nt  = 10;      % number of time steps
-  nIter = 20000;
+  nIter = 100000;
+  eIter = 1.0e-11;
   CFL = 0.125;     % Courant–Friedrichs–Lewy
 
   % PREPROCESSING
@@ -71,6 +72,9 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
   for it = 1 : Nt
     Ux = Ux + (dUxdx * xUx + dUxdy * yUx) / Nt;
     Uy = Uy + (dUydy * yUy) / Nt;
+    
+    error = 0.0;
+    
     for iter = 1 : nIter
       % displacement divergence
       divU = diff(Ux,1,1) / dX + diff(Uy,1,2) / dY;
@@ -101,12 +105,12 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
         tauxx(iPlast) = tauxx(iPlast) .* coh ./ J2(iPlast);
         tauyy(iPlast) = tauyy(iPlast) .* coh ./ J2(iPlast);
         Plast(iPlast) = 1.0;
-      endif
+      end % if
       iPlastXY = find(J2xy > coh);
       if length(iPlastXY) > 0
         tauxy(iPlastXY) = tauxy(iPlastXY) .* coh ./ J2xy(iPlastXY);
         PlastXY(iPlastXY) = 1.0;
-      endif
+      end % if
       
       % motion equation
       dVxdt = diff(-P(:,2:end-1) + tauxx(:,2:end-1), 1, 1)/dX / rho0 + diff(tauxy,1,2)/dY;
@@ -117,7 +121,15 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
       % displacements
       Ux = Ux + Vx * dt;
       Uy = Uy + Vy * dt;
-    endfor
+      
+      % exit criteria
+      error = (max(abs(Vx(:))) / Lx + max(abs(Vy(:))) / Ly) * dt / max(abs(loadValue * loadType));
+      if error < eIter
+        outStr = sprintf("Number of iterations is %d", iter);
+        disp(outStr);
+        break
+      end
+    end % for
     
     tauxyAv(2:end-1,2:end-1) = av4(tauxy);
     
@@ -164,16 +176,16 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
       axis image        % square image
       
       subplot(2, 2, 2)
-      plot(x, 0.5 * (Sanrr(:, Ny/2) + Sanrr(:, Ny/2 - 1)), 'g', x, 0.5 * (Snurr(:, Ny/2) + Snurr(:, Ny/2 - 1)), 'r')
+      plot(x(Nx/2 + 1:Nx), 0.5 * (Sanrr(Nx/2 + 1:Nx, Ny/2) + Sanrr(Nx/2 + 1:Nx, Ny/2 - 1)), 'g', x(Nx/2 + 1:Nx), 0.5 * (Snurr(Nx/2 + 1:Nx, Ny/2) + Snurr(Nx/2 + 1:Nx, Ny/2 - 1)), 'r')
       title("\sigma_{rr}")
       
       subplot(2, 2, 4)
-      plot(x, 0.5 * (Sanff(:, Ny/2) + Sanff(:, Ny/2 - 1)), 'g', x, 0.5 * (Snuff(:, Ny/2) + Snuff(:, Ny/2 - 1)), 'r')
+      plot(x(Nx/2 + 1:Nx), 0.5 * (Sanff(Nx/2 + 1:Nx, Ny/2) + Sanff(Nx/2 + 1:Nx, Ny/2 - 1)), 'g', x(Nx/2 + 1:Nx), 0.5 * (Snuff(Nx/2 + 1:Nx, Ny/2) + Snuff(Nx/2 + 1:Nx, Ny/2 - 1)), 'r')
       %plot(x, 0.5 * (Sanrr(:, Ny/2) - Sanff(:, Ny/2)), 'g', x, 0.5 * (Snurr(:, Ny/2) - Snuff(:, Ny/2)), 'r')
-      title("\sigma_{rr} - \sigma_{\phi \phi}")
+      title("\sigma_{\phi \phi}")
       
       drawnow
-    endif
+    end % if
     
     deltaP = mean(tauxx(1, :) - P(1, :)) + mean(tauxx(end, :) - P(end, :)) + ...
              mean(tauxx(:, 1) - P(:, 1)) + mean(tauxx(:, end) - P(:, end)) + ...
@@ -183,7 +195,7 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
     
     tauInfty = mean(tauxx(1, :) - tauyy(1, :)) + mean(tauxx(end, :) - tauyy(end, :)) + ...
                mean(tauxx(:, 1) - tauyy(:, 1)) + mean(tauxx(:, end) - tauyy(:, end));
-    tauInfty = tauInfty * 0.25 / coh / sqrt(2)
+    tauInfty = tauInfty * 0.125 / coh / sqrt(2)
     
     divUeff = loadValue * (loadType(1) + loadType(2));
         
@@ -191,6 +203,6 @@ function [Keff, Geff] = get_sigma_2D(loadValue, loadType, Nt)
     Geff(it, 1) = 0.5 * mean(tauxx(:)) / (loadValue * loadType(1) - divUeff / 3.0) / it * Nt
     Geff(it, 2) = 0.5 * mean(tauyy(:)) / (loadValue * loadType(2) - divUeff / 3.0) / it * Nt
     %Geff(it, 3) = mean(tauxy(:)) / (loadValue * loadType(1)) / it * Nt
-  endfor
+  end % for
   
-endfunction
+end % function
