@@ -8,9 +8,15 @@
 #include <chrono>
 #include "cuda.h"
 
-#define NGRID 7
-#define NPARS 7
-#define NT    4000000
+
+
+//numetric parametrs
+#define CFL 0.5                //Courant-Friedrichs-Lewy
+#define NGRID 2
+#define NT    1000000          //number of time steps
+
+//untouchable parametr!
+#define NPARS 7                //tnks matlab for this param
 
 __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy, 
                             const double* const P,
@@ -99,9 +105,7 @@ void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, co
   fclose(A_filw);
 }
 
-void SetMaterials(double* const K, double* const G, const int m, const int n, const double dX, const double dY) {
-  constexpr double E0 = 0.002;
-  constexpr double nu0 = 0.3;
+void SetMaterials(double* const K, double* const G, const int m, const int n, const double dX, const double dY, const double E0, const double nu0) {
   constexpr double E1 = 2.0;
   constexpr double nu1 = 0.2;
   for (int i = 0; i < m; i++) {
@@ -118,13 +122,25 @@ void SetMaterials(double* const K, double* const G, const int m, const int n, co
 
 std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int, 3>& loadType) {
   dim3 grid, block;
-  block.x = 32; 
+  block.x = 32;
   block.y = 32; 
   grid.x = NGRID;
   grid.y = NGRID;
-
+  //physics parametrs
+  const double Lx = 10;                  //physical length
+  const double Ly = 10;                  //physical width
+  const double E0 = 1;                   //Young's modulus
+  const double nu0 = 0.25;               //Poisson's ratio
+  const double rho = 1;                  //density
+  // preprocessing
+  const double K0 = E0 / (3 * (1 - 2 * nu0));    //bulk modulus
+  const double G0 = E0 / (2 + 2 * nu0);          //shear modulus
   const long int nX = block.x * grid.x;
   const long int nY = block.y * grid.y;
+  const double dX = Lx/(nX-1);
+  const double dY = Ly/(nY-1);
+  const double dt = CFL * min(dX, dY) / sqrt( (K0 + 4*G0/3) / rho); // time step
+  const double damp = 4 / dt / nX;
 
   cudaSetDevice(0);
   cudaDeviceReset();
@@ -134,25 +150,21 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   // parameters
   double* pa_cuda;
   double* pa_cpu = (double*)malloc(NPARS * sizeof(double));
-  //std::ifstream pa_fil("pa.dat", std::ifstream::in | std::ifstream::binary);
-  FILE* pa_fil = fopen("pa.dat", "rb");
-  if (!pa_fil) {
-    std::cerr << "Error! Cannot open file pa.dat!\n";
-    exit(1);
-  }
-  //pa_fil.read(pa_cpu, NPARS * sizeof(double));
-  fread(pa_cpu, sizeof(double), NPARS, pa_fil);
-  //pa_fil.close();
-  fclose(pa_fil);
+    pa_cpu[0] = dX;
+    pa_cpu[1] = dY;
+    pa_cpu[2] = dt;
+    pa_cpu[3] = K0;
+    pa_cpu[4] = G0;
+    pa_cpu[5] = rho;
+    pa_cpu[6] = damp;
+
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
-
-  const double dX = pa_cpu[0], dY = pa_cpu[1];
-
+  
   // materials
   double* K_cpu = (double*)malloc(nX * nY * sizeof(double));
   double* G_cpu = (double*)malloc(nX * nY * sizeof(double));
-  SetMaterials(K_cpu, G_cpu, nX, nY, dX, dY);
+  SetMaterials(K_cpu, G_cpu, nX, nY, dX, dY, E0, nu0);
   double* K_cuda;
   double* G_cuda;
   cudaMalloc(&K_cuda, nX * nY * sizeof(double));
@@ -257,7 +269,7 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   }
   Sigma[2] /= (nX - 1) * (nY - 1);
 
-  std::cout << Sigma[0] << '\n' << Sigma[1] << '\n' << Sigma[2] << std::endl;
+  //std::cout << Sigma[0] << '\n' << Sigma[1] << '\n' << Sigma[2] << std::endl;
 
   free(pa_cpu);
   free(K_cpu);
