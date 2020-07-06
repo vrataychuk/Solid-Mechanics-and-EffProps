@@ -7,16 +7,18 @@
 #include <array>
 #include <chrono>
 #include "cuda.h"
+#include <cmath>
 
 
 
 //numetric parametrs
-#define CFL 0.5                //Courant-Friedrichs-Lewy
+#define CFL 0.125                //Courant-Friedrichs-Lewy
 #define NGRID 2
-#define NT    1000000          //number of time steps
+#define NT    10                 //number of time steps
+#define nIter 100000
 
 //untouchable parametr!
-#define NPARS 7                //tnks matlab for this param
+#define NPARS 8                //tnks matlab for this param
 
 __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy, 
                             const double* const P,
@@ -30,18 +32,19 @@ __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy,
   const double dX = pa[0], dY = pa[1];
   const double dT = pa[2];
   const double rho = pa[5];
-  const double damp = pa[6];
+  const double dampX = pa[6];
+  const double dampY = pa[7];
 
   // motion equation
   if (i > 0 && i < nX && j > 0 && j < nY - 1) {
-    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] * (1.0 - dT * damp) + (dT / rho) * ( (
+    Vx[j * (nX + 1) + i] = Vx[j * (nX + 1) + i] * (1.0 - dT * dampX) + (dT / rho) * ( (
                            -P[j * nX + i] + P[j * nX + i - 1] + tauXX[j * nX + i] - tauXX[j * nX + i - 1]
                            ) / dX + (
                            tauXY[j * (nX - 1) + i - 1] - tauXY[(j - 1) * (nX - 1) + i - 1]
                            ) / dY );
   }
   if (i > 0 && i < nX - 1 && j > 0 && j < nY) {
-    Vy[j * nX + i] = Vy[j * nX + i] * (1.0 - dT * damp) + (dT / rho) * ( (
+    Vy[j * nX + i] = Vy[j * nX + i] * (1.0 - dT * dampY) + (dT / rho) * ( (
                      -P[j * nX + i] + P[(j - 1) * nX + i] + tauYY[j * nX + i] - tauYY[(j - 1) * nX + i]
                      ) / dY + (
                      tauXY[(j - 1) * (nX - 1) + i] - tauXY[(j - 1) * (nX - 1) + i - 1]
@@ -50,6 +53,80 @@ __global__ void ComputeDisp(double* Ux, double* Uy, double* Vx, double* Vy,
 
   Ux[j * (nX + 1) + i] = Ux[j * (nX + 1) + i] + Vx[j * (nX + 1) + i] * dT;
   Uy[j * nX + i] = Uy[j * nX + i] + Vy[j * nX + i] * dT;
+}
+
+__global__ void ComputeTauxyAv(double* tauxyAv, const double* const tauXY, const long int nX, const long int nY) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < nX - 2 && j < nY - 2) {
+        tauxyAv[(j + 1) * nX + (i + 1)] = 0.25 * (tauXY[j * (nX - 1) + i] + tauXY[j * (nX - 1) + i + 1] + tauXY[(j + 1) * (nX - 1) + i] + tauXY[(j + 1) * (nX - 1) + i + 1]);
+    }
+}
+
+__global__ void ComputeBordTauxyAv(double* tauxyAv, const long int nX, const long int nY) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i == 0 && j < nY - 2) {
+        tauxyAv[(j + 1) * nX + i] = tauxyAv[(j + 1) * nX + i + 1];
+    }
+    if (i == (nX - 1) && j < nY - 2) {
+        tauxyAv[(j + 1) * nX + i] = tauxyAv[(j + 1) * nX + i - 1];
+    }
+    if (j == 0 && i < nX - 2) {
+        tauxyAv[j * nX + i + 1] = tauxyAv[(j + 1) * nX + i + 1];
+    }
+    if (j == (nY - 1) && i < nX - 2) {
+        tauxyAv[j * nX + i + 1] = tauxyAv[(j - 1) * nX + i + 1];
+    }
+    if (i == 0 && j == 0) {
+        tauxyAv[0] = 0.5 * (tauxyAv[nX] + tauxyAv[1]);
+    }
+    if (i == (nX - 1) && j == 0) {
+        tauxyAv[i] = 0.5 * (tauxyAv[nX+i] + tauxyAv[i - 1]);
+    }
+    if (i == 0 && j == (nY - 1)) {
+        tauxyAv[j * nX] = 0.5 * (tauxyAv[j * nX + 1] + tauxyAv[(j - 1) * nX]);
+    }
+    if (i == (nX - 1) && j == (nY - 1)) {
+        tauxyAv[j * nX + i] = 0.5 * (tauxyAv[j * nX + i - 1] + tauxyAv[(j - 1) * nX + i]);
+    }
+}
+
+__global__ void ComputeLoad(double* Ux, double* Uy, const double dUxdx, const double dUydy,
+                          const double dUxdy, const double dX, const double dY, const int nt, const long int nX, const long int nY) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < (nX + 1) && j < nY) {
+        Ux[j * (nX + 1) + i] = Ux[j * (nX + 1) + i] + ((-0.5 * dX * nX + dX * i) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy) / nt;
+    }
+    if (i < nX && j < (nY + 1)) {
+        Uy[j * nX + i] = Uy[j * nX + i] + ((-0.5 * dY * nY + dY * j) * dUydy) / nt;
+    }
+}
+
+__global__ void ComputePlast(double* J2, double* J2xy, double* tauXX, double* tauYY, double* tauXY, double* tauxyAv,
+                             double* Plast, double* PlastXY, const long int nX, const long int nY, const double coh) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    /* TRESCA CRITERIA */
+    J2[j * nX + i] = sqrt((tauXX[j * nX + i]) * (tauXX[j * nX + i]) + (tauYY[j * nX + i]) * (tauYY[j * nX + i]) + 2 * (tauxyAv[j * nX + i]) * (tauxyAv[j * nX + i]));
+    
+    if (J2[j * nX + i] > coh) {
+        Plast[j * nX + i] = 1;
+        tauXX[j * nX + i] = tauXX[j * nX + i] * coh / J2[j * nX + i];
+        tauYY[j * nX + i] = tauYY[j * nX + i] * coh / J2[j * nX + i];
+    }
+    if (i < nX - 1 && j < nY - 1) {
+        J2xy[j * (nX - 1) + i] = sqrt((0.25 * (tauXX[j * nX + i] + tauXX[j * nX + i + 1] + tauXX[(j + 1) * nX + i] + tauXX[(j + 1) * nX + i + 1]))
+            * (0.25 * (tauXX[j * nX + i] + tauXX[j * nX + i + 1] + tauXX[(j + 1) * nX + i] + tauXX[(j + 1) * nX + i + 1]))
+            + (0.25 * (tauYY[j * nX + i] + tauYY[j * nX + i + 1] + tauYY[(j + 1) * nX + i] + tauYY[(j + 1) * nX + i + 1]))
+            * (0.25 * (tauYY[j * nX + i] + tauYY[j * nX + i + 1] + tauYY[(j + 1) * nX + i] + tauYY[(j + 1) * nX + i + 1]))
+            + 2 * tauXY[j * (nX - 1) + i] * tauXY[j * (nX - 1) + i]);
+        if (J2xy[j * (nX - 1) + i] > coh) {
+            PlastXY[j * (nX - 1) + i] = 1;
+            tauXY[j * (nX - 1) + i] = tauXY[j * (nX - 1) + i] * coh / J2xy[j * (nX - 1) + i];
+        }
+    }
 }
 
 __global__ void ComputeStress(const double* const Ux, const double* const Uy,
@@ -63,8 +140,6 @@ __global__ void ComputeStress(const double* const Ux, const double* const Uy,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
 
   const double dX = pa[0], dY = pa[1];
-  //const double dT = pa[2];
-  //const double K = pa[3], G = pa[4];
 
   // constitutive equation - Hooke's law
   P[j * nX + i] = P0[j * nX + i] - K[j * nX + i] * ( 
@@ -105,34 +180,43 @@ void SaveMatrix(double* const A_cpu, const double* const A_cuda, const int m, co
   fclose(A_filw);
 }
 
-void SetMaterials(double* const K, double* const G, const int m, const int n, const double dX, const double dY, const double E0, const double nu0) {
-  constexpr double E1 = 2.0;
-  constexpr double nu1 = 0.2;
+void SetMaterials(double* const K, double* const G, const int m, const int n, const double dX, const double dY, const double rad, const double K0, const double G0, const double EPC) {
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < n; j++) {
-      K[j * m + i] = E0 / (3.0 - 6.0 * nu0);
-      G[j * m + i] = E0 / (2.0 + 2.0 * nu0);
-      if ( sqrt((-0.5 * dX * (m - 1) + dX * i) * (-0.5 * dX * (m - 1) + dX * i) + (-0.5 * dY * (n - 1) + dY * j) * (-0.5 * dY * (n - 1) + dY * j)) < 2.85459861019 ) {
-        K[j * m + i] = E1 / (3.0 - 6.0 * nu1);
-        G[j * m + i] = E1 / (2.0 + 2.0 * nu1);
+      K[j * m + i] = K0;
+      G[j * m + i] = G0;
+      if ( sqrt((-0.5*dX * (m - 1) + dX * i)* (-0.5*dX * (m - 1) + dX * i)+(-0.5*dY*(n-1)+dY*j)* (-0.5*dY * (n - 1) + dY * j))<rad) {
+          K[j * m + i] = EPC*K0;
+          G[j * m + i] = EPC*G0;
       }
     }
   }
 }
 
-std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int, 3>& loadType) {
+std::array<double, 3> ComputeSigma(const double loadValue, const std::array<double, 3>& loadType) {
   dim3 grid, block;
   block.x = 32;
-  block.y = 32; 
-  grid.x = NGRID;
-  grid.y = NGRID;
+  block.y = 32;
+  //time parametrs
+  int one = 0;
+  int two = 0;
+  int tree = 0;
+  double nt1 = NT / 4;
+  double nt2 = NT / 2;
+  double nt3 = 3 * NT / 4;
   //physics parametrs
-  const double Lx = 10;                  //physical length
-  const double Ly = 10;                  //physical width
+  const double Lx = 20;                  //physical length
+  const double Ly = 20;                  //physical width
   const double E0 = 1;                   //Young's modulus
   const double nu0 = 0.25;               //Poisson's ratio
   const double rho = 1;                  //density
+  const double coh = 0.01;
+  const double P0 = 1.0 * coh;
+  const double rad = 1.0;                //rad of the hole
+  const double EPC = 0.01;               //eff props comperesent of the hole and surface
   // preprocessing
+  grid.x = NGRID;
+  grid.y = NGRID;
   const double K0 = E0 / (3 * (1 - 2 * nu0));    //bulk modulus
   const double G0 = E0 / (2 + 2 * nu0);          //shear modulus
   const long int nX = block.x * grid.x;
@@ -140,7 +224,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   const double dX = Lx/(nX-1);
   const double dY = Ly/(nY-1);
   const double dt = CFL * min(dX, dY) / sqrt( (K0 + 4*G0/3) / rho); // time step
-  const double damp = 4 / dt / nX;
+  const double dampX = 4 / dt / nX;
+  const double dampY = 4 / dt / nY;
 
   cudaSetDevice(0);
   cudaDeviceReset();
@@ -156,7 +241,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
     pa_cpu[3] = K0;
     pa_cpu[4] = G0;
     pa_cpu[5] = rho;
-    pa_cpu[6] = damp;
+    pa_cpu[6] = dampX;
+    pa_cpu[7] = dampY;
 
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
@@ -164,7 +250,7 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   // materials
   double* K_cpu = (double*)malloc(nX * nY * sizeof(double));
   double* G_cpu = (double*)malloc(nX * nY * sizeof(double));
-  SetMaterials(K_cpu, G_cpu, nX, nY, dX, dY, E0, nu0);
+  SetMaterials(K_cpu, G_cpu, nX, nY, dX, dY, rad, K0, G0, EPC);
   double* K_cuda;
   double* G_cuda;
   cudaMalloc(&K_cuda, nX * nY * sizeof(double));
@@ -193,30 +279,39 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   double* tauXY_cpu;
   SetMatrixZero(&tauXY_cpu, &tauXY_cuda, nX - 1, nY - 1);
 
+  double* tauxyAv_cuda;
+  double* tauxyAv_cpu;
+  SetMatrixZero(&tauxyAv_cpu, &tauxyAv_cuda, nX, nY);
+
+  //for plasticity
+  double* J2_cuda;
+  double* J2_cpu;
+  SetMatrixZero(&J2_cpu, &J2_cuda, nX, nY);
+
+  double* J2xy_cuda;
+  double* J2xy_cpu;
+  SetMatrixZero(&J2xy_cpu, &J2xy_cuda, nX - 1, nY - 1);
+
+  double* Plast_cuda;
+  double* Plast_cpu;
+  SetMatrixZero(&Plast_cpu, &Plast_cuda, nX, nY);
+
+  double* PlastXY_cuda;
+  double* PlastXY_cpu;
+  SetMatrixZero(&PlastXY_cpu, &PlastXY_cuda, nX - 1, nY - 1);
+
   // displacement
   const double dUxdx = loadValue * loadType[0];
   const double dUydy = loadValue * loadType[1];
   const double dUxdy = loadValue * loadType[2];
 
   double* Ux_cuda;
-  double* Ux_cpu = (double*)malloc((nX+1) * nY * sizeof(double));
-  for (int i = 0; i < nX + 1; i++) {
-    for (int j = 0; j < nY; j++) {
-      Ux_cpu[j * (nX + 1) + i] = (-0.5 * dX * nX + dX * i) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy;
-    }
-  }
-  cudaMalloc(&Ux_cuda, (nX + 1) * nY * sizeof(double));
-  cudaMemcpy(Ux_cuda, Ux_cpu, (nX + 1) * nY * sizeof(double), cudaMemcpyHostToDevice);
+  double* Ux_cpu;
+  SetMatrixZero(&Ux_cpu, &Ux_cuda, nX + 1, nY);
 
   double* Uy_cuda;
-  double* Uy_cpu = (double*)malloc(nX * (nY + 1) * sizeof(double));
-  for (int i = 0; i < nX; i++) {
-    for (int j = 0; j < nY + 1; j++) {
-      Uy_cpu[j * nX + i] = (-0.5 * dY * nY + dY * j) * dUydy;
-    }
-  }
-  cudaMalloc(&Uy_cuda, nX * (nY + 1) * sizeof(double));
-  cudaMemcpy(Uy_cuda, Uy_cpu, nX * (nY + 1) * sizeof(double), cudaMemcpyHostToDevice);
+  double* Uy_cpu;
+  SetMatrixZero(&Uy_cpu, &Uy_cuda, nX, nY + 1);
 
   // velocity
   double* Vx_cuda;
@@ -227,18 +322,95 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   double* Vy_cpu;
   SetMatrixZero(&Vy_cpu, &Vy_cuda, nX, nY + 1);
 
+  //for effprops
+  double deltaP;
+  double deltaP1;
+  double deltaP2;
+  double tauInfty;
+  double tauInfty1;
+  double tauInfty2;
+  double divUeff = loadValue * (loadType[0]+loadType[1]);
+  double Keff;
+  double meanP;
+  double meantauXX;
+  double meantauYY;
+  double Geff1;
+  double Geff2;
+
   //std::cout << "Before loop...\n";
 
   /* ACTION LOOP */
   for (int it = 0; it < NT; it++) {
-    ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, K_cuda, G_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
-    cudaDeviceSynchronize();    // wait for compute device to finish
-    //std::cout << "After computing sigma...\n";
-    ComputeDisp<<<grid, block>>>(Ux_cuda, Uy_cuda, Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
-    cudaDeviceSynchronize();    // wait for compute device to finish
-
-    /*cudaMemcpy(Vx_cpu, Vx_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToHost);
-    std::cout << "Vx on step " << it << " is " << Vx_cpu[nY/2 * (nX + 1) + nX/2] << std::endl;*/
+      //set zero
+      deltaP = 0;
+      deltaP1 = 0;
+      deltaP2 = 0;
+      tauInfty1 = 0;
+      tauInfty2 = 0;
+      tauInfty = 0;
+      meanP = 0;
+      meantauXX = 0;
+      meantauYY = 0;
+      ComputeLoad<<<grid, block>>>(Ux_cuda, Uy_cuda, dUxdx, dUydy, dUxdy, dX, dY, NT, nX, nY);
+      cudaDeviceSynchronize();    // wait for compute device to finish
+      for (int iter = 0; iter < nIter;iter++) {
+          ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, K_cuda, G_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
+          cudaDeviceSynchronize();    // wait for compute device to finish
+          //tauxy for plasticiti
+          ComputeTauxyAv<<<grid, block>>>(tauxyAv_cuda, tauXY_cuda, nX, nY);      //tauxyAv(2:end-1,2:end-1) = av4(tauxy);
+          cudaDeviceSynchronize();    // wait for compute device to finish
+          ComputeBordTauxyAv<<<grid, block>>>(tauxyAv_cuda, nX, nY);
+          cudaDeviceSynchronize();    // wait for compute device to finish
+          //plasticiti
+          ComputePlast<<<grid, block>>>(J2_cuda, J2xy_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAv_cuda, Plast_cuda, PlastXY_cuda, nX, nY, coh);
+          cudaDeviceSynchronize();    // wait for compute device to finish
+          ComputeDisp<<<grid, block>>>(Ux_cuda, Uy_cuda, Vx_cuda, Vy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
+          cudaDeviceSynchronize();    // wait for compute device to finish
+      }
+      if ((it > nt1) && (one == 0)) {
+          std::cout << "25%" << '\n';
+          one = 1;
+      }
+      else if ((it > nt2) && (two == 0)) {
+          std::cout << "50%" << '\n';
+          two = 1;
+      }
+      else if ((it > nt3) && (tree == 0)) {
+          std::cout << "75%" << '\n';
+          tree = 1;
+      }
+      cudaMemcpy(P_cpu, P_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+      cudaMemcpy(tauXX_cpu, tauXX_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+      cudaMemcpy(tauYY_cpu, tauYY_cuda, nX * nY * sizeof(double), cudaMemcpyDeviceToHost);
+      for (int j = 0; j < nY; j++) {
+          deltaP1 = deltaP1 + tauXX_cpu[j * nX] + tauYY_cpu[j * nX] - 2 * P_cpu[j * nX];
+          deltaP1 = deltaP1 + tauXX_cpu[j * nX + nX - 1] + tauYY_cpu[j * nX + nX - 1] - 2 * P_cpu[j * nX + nX - 1];
+          tauInfty1 = tauInfty1 + tauXX_cpu[j * nX] - tauYY_cpu[j * nX] + tauXX_cpu[j * nX + nX - 1] - tauYY_cpu[j * nX + nX - 1];
+      }
+      deltaP1 = deltaP1 / nY;
+      tauInfty1 = tauInfty1 / nY;
+      for (int i = 0; i < nX; i++) {
+          deltaP2 = deltaP2 + tauXX_cpu[i] + tauYY_cpu[i] - 2 * P_cpu[i];
+          deltaP2 = deltaP2 + tauXX_cpu[(nY - 1) * nX + i] + tauYY_cpu[(nY - 1) * nX + i] - 2 * P_cpu[(nY - 1) * nX + i];
+          tauInfty2 = tauInfty2 + tauXX_cpu[i] - tauYY_cpu[i] + tauXX_cpu[(nY - 1) * nX + i] - tauYY_cpu[(nY - 1) * nX + i];
+          for (int j = 0;j < nY;j++) {
+              meanP = meanP + P_cpu[j * nX + i];
+              meantauXX = meantauXX + tauXX_cpu[j * nX + i];
+              meantauYY = meantauYY + tauYY_cpu[j * nX + i];
+          }
+      }
+      meanP = meanP / nX / nY;
+      meantauXX = meantauXX / nX / nY;
+      meantauYY = meantauYY / nX / nY;
+      deltaP2 = deltaP2 / nX;
+      tauInfty2 = tauInfty2 / nX;
+      deltaP = (deltaP1 + deltaP2) * (CFL) / (coh * sqrt(2));
+      tauInfty = (tauInfty1 + tauInfty2) * (CFL) / (coh * sqrt(2));
+      Keff = -(meanP * NT) / (divUeff * (it + 1));
+      Geff1 = (0.5 * meantauXX * NT) / ((it + 1) * (loadValue * loadType[0] - divUeff / 3));
+      Geff2 = (0.5 * meantauYY * NT) / ((it + 1) * (loadValue * loadType[1] - divUeff / 3));
+      std::cout << "it =   " << it << "\n deltaP =   " << deltaP << "\n tauInfty =   " << tauInfty << "\n Keff =   " <<
+          Keff << "\n Geff1 =   " << Geff1 << "\n Geff2 =   " << Geff2<<'\n';
   }
 
   /* OUTPUT DATA WRITING */
@@ -283,6 +455,11 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   free(Uy_cpu);
   free(Vx_cpu);
   free(Vy_cpu);
+  free(tauxyAv_cpu);
+  free(J2_cpu);
+  free(J2xy_cpu);
+  free(Plast_cpu);
+  free(PlastXY_cpu);
 
   cudaFree(pa_cuda);
   cudaFree(K_cuda);
@@ -296,6 +473,11 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<int,
   cudaFree(Uy_cuda);
   cudaFree(Vx_cuda);
   cudaFree(Vy_cuda);
+  cudaFree(tauxyAv_cuda);
+  cudaFree(J2_cuda);
+  cudaFree(J2xy_cuda);
+  cudaFree(Plast_cuda);
+  cudaFree(PlastXY_cuda);
 
   cudaDeviceReset();
   return Sigma;
@@ -305,25 +487,27 @@ int main() {
   const auto start = std::chrono::system_clock::now();
 
   constexpr double load_value = 0.002;
-  const std::array<double, 3> Sxx = ComputeSigma(load_value, {1, 0, 0});
-  const std::array<double, 3> Syy = ComputeSigma(load_value, {0, 1, 0});
-  const std::array<double, 3> Sxy = ComputeSigma(load_value, {0, 0, 1});
+  
+  const std::array<double, 3> Sxx = ComputeSigma(load_value, {1, 1, 0});
+  
+  /*const std::array<double, 3> Syy = ComputeSigma(load_value, {0, 1, 0});
+  const std::array<double, 3> Sxy = ComputeSigma(load_value, {0, 0, 1});*/
 
-  const double C_1111 = Sxx[0] / load_value;
+  /*const double C_1111 = Sxx[0] / load_value;
   const double C_1122 = Sxx[1] / load_value;
   const double C_1112 = Sxx[2] / load_value;
 
   const double C_2222 = Syy[1] / load_value;
   const double C_1222 = Syy[2] / load_value;
 
-  const double C_1212 = Sxy[2] / load_value;
+  const double C_1212 = Sxy[2] / load_value;*/
 
-  std::cout << "C_1111 = " << C_1111 << '\n';
+  /*std::cout << "C_1111 = " << C_1111 << '\n';
   std::cout << "C_1122 = " << C_1122 << '\n';
   std::cout << "C_1112 = " << C_1112 << '\n';
   std::cout << "C_2222 = " << C_2222 << '\n';
   std::cout << "C_1222 = " << C_1222 << '\n';
-  std::cout << "C_1212 = " << C_1212 << '\n';
+  std::cout << "C_1212 = " << C_1212 << '\n';*/
 
   const auto end = std::chrono::system_clock::now();
   const int elapsed_sec = static_cast<int>( std::chrono::duration_cast<std::chrono::seconds>(end - start).count() );
