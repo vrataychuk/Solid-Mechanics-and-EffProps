@@ -14,8 +14,8 @@
 //numetric parametrs
 #define CFL 0.125                //Courant-Friedrichs-Lewy
 #define NGRID 2
-#define NT    10                 //number of time steps
-#define nIter 100000
+#define NT    1                 //number of time steps
+#define nIter 10000
 
 //untouchable parametr!
 #define NPARS 8                //tnks matlab for this param
@@ -92,15 +92,17 @@ __global__ void ComputeBordTauxyAv(double* tauxyAv, const long int nX, const lon
     }
 }
 
-__global__ void ComputeLoad(double* Ux, double* Uy, const double dUxdx, const double dUydy,
+__global__ void ComputeLoad(double* Ux, double* Uy, double* Ux_old, double* Uy_old, const double dUxdx, const double dUydy,
                           const double dUxdy, const double dX, const double dY, const int nt, const long int nX, const long int nY) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    if (i < (nX + 1) && j < nY) {
-        Ux[j * (nX + 1) + i] = Ux[j * (nX + 1) + i] + ((-0.5 * dX * nX + dX * i) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy) / nt;
+    Ux[j * (nX + 1) + i] = Ux_old[j * (nX + 1) + i] + ((-0.5 * dX * nX + dX * i) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy) / nt;
+    Uy[j * nX + i] = Uy_old[j * nX + i] + ((-0.5 * dY * nY + dY * j) * dUydy) / nt;
+    if (j < nY) {
+        Ux[j * (nX + 1) + nX] = Ux_old[j * (nX + 1) + nX] + ((-0.5 * dX * nX + dX * nX) * dUxdx + (-0.5 * dY * (nY - 1) + dY * j) * dUxdy) / nt;
     }
-    if (i < nX && j < (nY + 1)) {
-        Uy[j * nX + i] = Uy[j * nX + i] + ((-0.5 * dY * nY + dY * j) * dUydy) / nt;
+    if (i < nX) {
+        Uy[nY * nX + i] = Uy_old[nY * nX + i] + ((-0.5 * dY * nY + dY * nY) * dUydy) / nt;
     }
 }
 
@@ -219,6 +221,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   grid.y = NGRID;
   const double K0 = E0 / (3 * (1 - 2 * nu0));    //bulk modulus
   const double G0 = E0 / (2 + 2 * nu0);          //shear modulus
+  std::cout << "K0 =   " << K0 << '\n';
+  std::cout << "G0 =   " << G0 << '\n';
   const long int nX = block.x * grid.x;
   const long int nY = block.y * grid.y;
   const double dX = Lx/(nX-1);
@@ -247,6 +251,10 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   cudaMalloc((void**)&pa_cuda, NPARS * sizeof(double));
   cudaMemcpy(pa_cuda, pa_cpu, NPARS * sizeof(double), cudaMemcpyHostToDevice);
   
+  FILE* A_filw = fopen("pac.dat", "wb");
+  fwrite(pa_cpu, sizeof(double), NPARS, A_filw);
+  fclose(A_filw);
+
   // materials
   double* K_cpu = (double*)malloc(nX * nY * sizeof(double));
   double* G_cpu = (double*)malloc(nX * nY * sizeof(double));
@@ -257,12 +265,22 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   cudaMalloc(&G_cuda, nX * nY * sizeof(double));
   cudaMemcpy(K_cuda, K_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
   cudaMemcpy(G_cuda, G_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+  SaveMatrix(K_cpu, K_cuda, nX, nY, "Kc.dat");
+  SaveMatrix(G_cpu, G_cuda, nX, nY, "Gc.dat");
 
   // stress
   double* P0_cuda;
   double* P0_cpu;
   SetMatrixZero(&P0_cpu, &P0_cuda, nX, nY);
-
+  for (int i = 0; i < nX; i++) {
+      for (int j = 0; j < nY; j++) {
+          if (sqrt((-0.5 * dX * (nX - 1) + dX * i) * (-0.5 * dX * (nX - 1) + dX * i) + (-0.5 * dY * (nY - 1) + dY * j) * (-0.5 * dY * (nY - 1) + dY * j)) < rad) {
+              P0_cpu[j * nX + i] = P0;
+          }
+      }
+  }
+  cudaMemcpy(P0_cuda, P0_cpu, nX * nY * sizeof(double), cudaMemcpyHostToDevice);
+      
   double* P_cuda;
   double* P_cpu;
   SetMatrixZero(&P_cpu, &P_cuda, nX, nY);
@@ -313,6 +331,14 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   double* Uy_cpu;
   SetMatrixZero(&Uy_cpu, &Uy_cuda, nX, nY + 1);
 
+  double* Ux_old_cuda;
+  double* Ux_old_cpu;
+  SetMatrixZero(&Ux_old_cpu, &Ux_old_cuda, nX + 1, nY);
+
+  double* Uy_old_cuda;
+  double* Uy_old_cpu;
+  SetMatrixZero(&Uy_old_cpu, &Uy_old_cuda, nX + 1, nY);
+
   // velocity
   double* Vx_cuda;
   double* Vx_cpu;
@@ -351,7 +377,9 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
       meanP = 0;
       meantauXX = 0;
       meantauYY = 0;
-      ComputeLoad<<<grid, block>>>(Ux_cuda, Uy_cuda, dUxdx, dUydy, dUxdy, dX, dY, NT, nX, nY);
+      cudaMemcpy(Ux_old_cuda, Ux_cuda, (nX + 1) * nY * sizeof(double), cudaMemcpyDeviceToDevice);
+      cudaMemcpy(Uy_old_cuda, Uy_cuda, nX * (nY+1) * sizeof(double), cudaMemcpyDeviceToDevice);
+      ComputeLoad<<<grid, block>>>(Ux_cuda, Uy_cuda, Ux_old_cuda, Uy_old_cuda, dUxdx, dUydy, dUxdy, dX, dY, NT, nX, nY);
       cudaDeviceSynchronize();    // wait for compute device to finish
       for (int iter = 0; iter < nIter;iter++) {
           ComputeStress<<<grid, block>>>(Ux_cuda, Uy_cuda, K_cuda, G_cuda, P0_cuda, P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, pa_cuda, nX, nY);
@@ -404,8 +432,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
       meantauYY = meantauYY / nX / nY;
       deltaP2 = deltaP2 / nX;
       tauInfty2 = tauInfty2 / nX;
-      deltaP = (deltaP1 + deltaP2) * (CFL) / (coh * sqrt(2));
-      tauInfty = (tauInfty1 + tauInfty2) * (CFL) / (coh * sqrt(2));
+      deltaP = (deltaP1 + deltaP2) * (0.125) / (coh * sqrt(2));
+      tauInfty = (tauInfty1 + tauInfty2) * (0.125) / (coh * sqrt(2));
       Keff = -(meanP * NT) / (divUeff * (it + 1));
       Geff1 = (0.5 * meantauXX * NT) / ((it + 1) * (loadValue * loadType[0] - divUeff / 3));
       Geff2 = (0.5 * meantauYY * NT) / ((it + 1) * (loadValue * loadType[1] - divUeff / 3));
@@ -415,6 +443,9 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
 
   /* OUTPUT DATA WRITING */
   SaveMatrix(P_cpu, P_cuda, nX, nY, "Pc.dat");
+  SaveMatrix(tauXX_cpu, tauXX_cuda, nX, nY, "tauxxc.dat");
+  SaveMatrix(tauYY_cpu, tauYY_cuda, nX, nY, "tauyyc.dat");
+  SaveMatrix(Ux_cpu, Ux_cuda, nX + 1, nY, "Uxc.dat");
   SaveMatrix(Uy_cpu, Uy_cuda, nX, nY + 1, "Uyc.dat");
   SaveMatrix(tauXY_cpu, tauXY_cuda, nX - 1, nY - 1, "tauXYc.dat");
 
@@ -453,6 +484,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   free(tauXY_cpu);
   free(Ux_cpu);
   free(Uy_cpu);
+  free(Ux_old_cpu);
+  free(Uy_old_cpu);
   free(Vx_cpu);
   free(Vy_cpu);
   free(tauxyAv_cpu);
@@ -471,6 +504,8 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
   cudaFree(tauXY_cuda);
   cudaFree(Ux_cuda);
   cudaFree(Uy_cuda);
+  cudaFree(Ux_old_cuda);
+  cudaFree(Uy_old_cuda);
   cudaFree(Vx_cuda);
   cudaFree(Vy_cuda);
   cudaFree(tauxyAv_cuda);
@@ -486,7 +521,7 @@ std::array<double, 3> ComputeSigma(const double loadValue, const std::array<doub
 int main() {
   const auto start = std::chrono::system_clock::now();
 
-  constexpr double load_value = 0.002;
+  constexpr double load_value = -0.01;
   
   const std::array<double, 3> Sxx = ComputeSigma(load_value, {1, 1, 0});
   
