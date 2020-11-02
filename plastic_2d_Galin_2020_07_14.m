@@ -31,7 +31,7 @@ Tauxy      = av4(sxy);
 CFL       = 1/2;                     % V Courant Friedrich Levy codition
 damp      = 5/1;                     % damping of acoustic waves
 nout      = 10;                   % plot every nout
-niter     =  10;                   % max number of iterations
+niter     =  2;                   % max number of iterations
 % eiter     = 1e-16;                   % exit criteria from iterations
 nt        = 1;
 % preprocessing
@@ -73,12 +73,12 @@ for it = 1:nt
     fid          = fopen( 'tauXX.dat','wb'); fwrite(fid,    Txx(:),'double'); fclose(fid);
     fid          = fopen( 'tauYY.dat','wb'); fwrite(fid,    Tyy(:),'double'); fclose(fid);
     fid          = fopen( 'tauXY.dat','wb'); fwrite(fid,    Tauxy(:),'double'); fclose(fid);
-    fid          = fopen( 'Sxx.dat','wb'); fwrite(fid,    sxx(:),'double'); fclose(fid);
-    fid          = fopen( 'Syy.dat','wb'); fwrite(fid,    syy(:),'double'); fclose(fid);
-    system(['nvcc -DNGRID=',int2str(ngrid),' -DNITER=',int2str(niter),' -DK=',num2str(K0),...
-        ' -DG=',num2str(G0),' -DCOH=',num2str(coh0),' -DRHO=',num2str(rho0),...
-        ' -DDX=',num2str(dx),' -DDY=',num2str(dy),' -DDT=',num2str(dt), ...
-        ' -DDAMP=',num2str(damp),' pg2d.cu']);
+    %fid          = fopen( 'Sxx.dat','wb'); fwrite(fid,    sxx(:),'double'); fclose(fid);
+    %fid          = fopen( 'Syy.dat','wb'); fwrite(fid,    syy(:),'double'); fclose(fid);
+    system(['nvcc -DNGRID=',int2str(ngrid),' -DNITER=',int2str(niter),' -DK=',num2str(K0,16),...
+        ' -DG=',num2str(G0,16),' -DCOH=',num2str(coh0,16),' -DRHO=',num2str(rho0,16),...
+        ' -DDX=',num2str(dx,16),' -DDY=',num2str(dy,16),' -DDT=',num2str(dt,16), ...
+        ' -DDAMP=',num2str(damp,16),' pg2d.cu']);
 %     system(['nvcc -DNGRID=',int2str(ngrid),' -DNITER=',int2str(niter),' -DK0=',num2str(K0),' pg2d.cu']);
     tic,system('a.exe');
     GPU_time=toc
@@ -93,14 +93,21 @@ for it = 1:nt
         divV = Exx   + Eyy;
         Exxd = Exx   - divV/3;
         Eyyd = Eyy   - divV/3;
-        Pr  = Pr   -   K0*dt*divV;
+        
+        
+        
+        Pr  = Pr   -   K0*dt*divV;               
         Tauxy = Tauxy  + 2*G0*dt*Exy;
         Txx = Txx  + 2*G0*dt*Exxd;
         Tyy = Tyy  + 2*G0*dt*Eyyd;
+        
         %%%% Plasticity start
         Txye(2:end-1,2:end-1) = av4(Tauxy);
+        
         J2                    = sqrt((Txx.^2 + Tyy.^2)/2 + Txye.^2);        
         lam                   = (1-coh0./J2); lam(lam<0) = 0;
+        
+        
         
         if sum(lam(:)>0)>0
             Txx  = (1-lam).*Txx;
@@ -128,33 +135,66 @@ for it = 1:nt
         
         
         
-        
-
-
-
 
         err_pl(iter) = max(J2(:)./coh0-1);
         %%%% Plasticity end
         Sxx  = -Pr   + Txx;
         Syy  = -Pr   + Tyy;
         
-        Fx   = diff(Sxx(:,2:end-1),1,1)/dx + diff(Tauxy,1,2)/dy;
-        Fy   = diff(Syy(2:end-1,:),1,2)/dy + diff(Tauxy,1,1)/dx;
+%         fil = fopen('testc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx, ny);
+%         difftest = Syy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('test')
+
+%         fil = fopen('dx.dat', 'rb');
+%         dxc = fread(fil, 'double');
+%         fclose(fil);
+%         diffdx = dx - dxc
+
+        Fx   =diff(Sxx(:,2:end-1),1,1)/dx + diff(Tauxy,1,2)/dy;
+        Fy   =diff(Syy(2:end-1,:),1,2)/dy + diff(Tauxy,1,1)/dx;
+        
+%         fil = fopen('tauXYc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx-1, ny-1);
+%         difftest = Tauxy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('test')
+%         
+%         fil = fopen('Sxxc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx, ny);
+%         difftest = Sxx - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testSx')
+%         
+%         fil = fopen('Syyc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx, ny);
+%         difftest = Syy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testSy')
         
 %         fil = fopen('testFc.dat', 'rb');
-%     testc = fread(fil, 'double');
-%     fclose(fil);
-%     testc = reshape(testc, nx-1, ny-2);
-%     difftest = Fx - testc;
-%     max(abs(difftest(:)))
-%     plot(231),imagesc(difftest),axis image,colorbar,title('test')
-%     fil = fopen('testc.dat', 'rb');
-%     testc = fread(fil, 'double');
-%     fclose(fil);
-%     testc = reshape(testc, nx-2, ny-1);
-%     difftest = Fy - testc;
-%     max(abs(difftest(:)))
-%     plot(231),imagesc(difftest),axis image,colorbar,title('test')
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx-1, ny-2);
+%         difftest = Fx - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testFx')
+%         fil = fopen('testc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx-2, ny-1);
+%         difftest = Fy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testFy')
         
         Vx(2:end-1,2:end-1) = (Vx(2:end-1,2:end-1)+dt/rho0*Fx)/(1+damp/nx);
         Vy(2:end-1,2:end-1) = (Vy(2:end-1,2:end-1)+dt/rho0*Fy)/(1+damp/nx);
@@ -175,6 +215,7 @@ for it = 1:nt
     diffVx = Vx - Vxc;
     max(abs(diffVx(:)))
     plot(231),imagesc(diffVx),axis image,colorbar,title('diffVX')
+    
     fil = fopen('Vyc.dat', 'rb');
     Vyc = fread(fil, 'double');
     fclose(fil);
@@ -182,6 +223,7 @@ for it = 1:nt
     diffVy = Vy - Vyc;
     max(abs(diffVy(:)))
     plot(231),imagesc(diffVy),axis image,colorbar,title('diffVy')
+    
     fil = fopen('Uxc.dat', 'rb');
     Uxc = fread(fil, 'double');
     fclose(fil);
@@ -189,6 +231,7 @@ for it = 1:nt
     diffUx = Ux - Uxc;
     max(abs(diffUx(:)))
     plot(231),imagesc(diffUx),axis image,colorbar,title('diffUx')
+    
     fil = fopen('Pc.dat', 'rb');
     Pc = fread(fil, 'double');
     fclose(fil);
@@ -196,6 +239,7 @@ for it = 1:nt
     diffP = Pr - Pc;
     max(abs(diffP(:)))
     plot(231),imagesc(diffP),axis image,colorbar,title('diffP')
+    
     fil = fopen('tauXXc.dat', 'rb');
     tauXXc = fread(fil, 'double');
     fclose(fil);
@@ -203,6 +247,7 @@ for it = 1:nt
     difftauXX = Txx - tauXXc;
     max(abs(difftauXX(:)))
     plot(231),imagesc(difftauXX),axis image,colorbar,title('difftauXX')
+    
     fil = fopen('tauYYc.dat', 'rb');
     tauYYc = fread(fil, 'double');
     fclose(fil);
@@ -210,6 +255,7 @@ for it = 1:nt
     difftauYY = Tyy - tauYYc;
     max(abs(difftauYY(:)))
     plot(231),imagesc(difftauYY),axis image,colorbar,title('difftauYY')
+    
     fil = fopen('tauXYc.dat', 'rb');
     tauXYc = fread(fil, 'double');
     fclose(fil);
@@ -217,6 +263,15 @@ for it = 1:nt
     difftauXY = Tauxy - tauXYc;
     max(abs(difftauXY(:)))
     plot(231),imagesc(difftauXY),axis image,colorbar,title('difftauXY')
+    
+    fil = fopen('tauxyAVc.dat', 'rb');
+    tauXYc = fread(fil, 'double');
+    fclose(fil);
+    tauXYc = reshape(tauXYc, nx, ny);
+    difftauXY = Txye - tauXYc;
+    max(abs(difftauXY(:)))
+    plot(231),imagesc(difftauXY),axis image,colorbar,title('difftauxyAV')
+    
     fil = fopen('J2c.dat', 'rb');
     J2c = fread(fil, 'double');
     fclose(fil);
@@ -224,6 +279,7 @@ for it = 1:nt
     diffJ2 = J2 - J2c;
     max(abs(diffJ2(:)))
     plot(231),imagesc(diffJ2),axis image,colorbar,title('diffJ2')
+    
     fil = fopen('lamc.dat', 'rb');
     lamc = fread(fil, 'double');
     fclose(fil);
@@ -231,6 +287,7 @@ for it = 1:nt
     difflam = lam - lamc;
     max(abs(difflam(:)))
     plot(231),imagesc(difflam),axis image,colorbar,title('difflam')
+    
     fil = fopen('lamac.dat', 'rb');
     lamac = fread(fil, 'double');
     fclose(fil);
@@ -238,7 +295,63 @@ for it = 1:nt
     difflama = lama - lamac;
     max(abs(difflama(:)))
     plot(231),imagesc(difflama),axis image,colorbar,title('difflama')
+    
+    fil = fopen('Sxxc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx, ny);
+    difftest = Sxx - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testSx')
 
+    fil = fopen('Syyc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx, ny);
+    difftest = Syy - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testSy')
+
+    fil = fopen('Fc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx-1, ny-2);
+    difftest = Fx - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testFx')
+    
+    fil = fopen('Fyc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx-2, ny-1);
+    difftest = Fy - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testFy')
+
+    fil = fopen('Exxc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx, ny);
+    difftest = Exx - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testEx')
+
+    fil = fopen('Eyyc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx, ny);
+    difftest = Eyy - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testEy')
+    
+    fil = fopen('Exyc.dat', 'rb');
+    testc = fread(fil, 'double');
+    fclose(fil);
+    testc = reshape(testc, nx-1, ny-1);
+    difftest = Exy - testc;
+    max(abs(difftest(:)))
+    plot(231),imagesc(difftest),axis image,colorbar,title('testExy')
+    
 
 
 

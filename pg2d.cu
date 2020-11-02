@@ -106,11 +106,11 @@ __global__ void ComputeF(double* Fx, double* Fy, const double* const Sxx, const 
                          const double dx, const double dy, const long int nx, const long int ny) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    if (i < nx - 1 && j < ny - 2) {
-        Fx[j * (nx - 1) + i] = (Sxx[(j+1) * nx + i+1] - Sxx[(j+1) * nx + i]) / dx + (tauXY[(j + 1) * (nx - 1) + i] - tauXY[j * (nx - 1) + i]) / dy;
+    if (i < (nx - 1) && j < (ny - 2)) {
+        Fx[j * (nx - 1) + i] = (Sxx[(j + 1) * nx + i + 1] - Sxx[(j + 1) * nx + i]) / dx + (tauXY[(j + 1) * (nx - 1) + i] - tauXY[j * (nx - 1) + i]) / dy;
     }
-    if (i < nx - 2 && j < ny - 1) {
-        Fy[j * (nx - 2) + i] = (Syy[(j + 1) * nx + i+1] - Syy[j * nx + i+1]) / dy + (tauXY[j * (nx - 1) + i + 1] - tauXY[j * (nx - 1) + i]) / dx;
+    if (i < (nx - 2) && j < (ny - 1)) {
+        Fy[j * (nx - 2) + i] = (Syy[(j + 1) * nx + i + 1] - Syy[j * nx + i + 1]) / dy + (tauXY[j * (nx - 1) + i + 1] - tauXY[j * (nx - 1) + i]) / dx;
     }
 }
 
@@ -118,7 +118,7 @@ __global__ void ComputeV(double* Vx, double* Vy, double* Ux, const double* const
                          const double damp, const double dt, const long int nx, const long int ny) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    if (i < nx - 1 && j < ny - 2) {
+    if (i < nx - 1  && j < ny - 2) {
         Vx[(j + 1) * (nx + 1) + i + 1] = (Vx[(j + 1) * (nx + 1) + i + 1] + dt / rho * Fx[j * (nx - 1) + i]) / (1 + damp / nx);
     }
     if (i < nx - 2 && j < ny - 1) {
@@ -177,15 +177,20 @@ int main() {
     double rho = RHO;
     double dt = DT;
     double damp = DAMP;
-    std::cout << "K0=" << K0 << "     " << K << '\n';
+    //double dx = DX;
+    /*std::cout << "K0=" << K0 << "     " << K << '\n';
     std::cout << "G0=" << G0 << "     " << G << '\n';
     std::cout << "coh=" << coh << "     " << COH << '\n';
     std::cout << "rho=" << rho << "     " << RHO << '\n';
     std::cout << "dt=" << dt << "     " << DT << '\n';
     std::cout << "damp=" << damp << "     " << DAMP << '\n';
     std::cout << "dx = " << DX << '\n';
-    std::cout << "dy = " << DY << '\n';
+    std::cout << "dy = " << DY << '\n';*/
     
+    /*FILE* fil = fopen("dx.dat", "wb");
+    fwrite( &dx, sizeof(double), 1, fil);
+    fclose(fil);*/
+
     
     dim3 grid, block;
     block.x = 32; grid.x = NGRID;
@@ -229,14 +234,6 @@ int main() {
     double* Ux_cuda;
     LoadMatrix(&Ux_cpu, &Ux_cuda, nx + 1, ny, "Ux.dat");
 
-    double* Sxx_cpu;
-    double* Sxx_cuda;
-    LoadMatrix(&Sxx_cpu, &Sxx_cuda, nx, ny, "Sxx.dat");
-
-    double* Syy_cpu;
-    double* Syy_cuda;
-    LoadMatrix(&Syy_cpu, &Syy_cuda, nx, ny, "Syy.dat");
-
     //set zeros
     double* tauxyAV_cpu;
     double* tauxyAV_cuda;
@@ -273,6 +270,14 @@ int main() {
     cudaMalloc(&flag_cuda, 1 * sizeof(int));
     cudaMemcpy(flag_cuda, flag_cpu, 1 * sizeof(int), cudaMemcpyHostToDevice);
 
+    double* Sxx_cpu;
+    double* Sxx_cuda;
+    SetMatrixZero(&Sxx_cpu, &Sxx_cuda, nx, ny);
+
+    double* Syy_cpu;
+    double* Syy_cuda;
+    SetMatrixZero(&Syy_cpu, &Syy_cuda, nx, ny);
+
     double* Fx_cpu;
     double* Fx_cuda;
     SetMatrixZero(&Fx_cpu, &Fx_cuda, nx - 1, ny - 2);
@@ -283,9 +288,10 @@ int main() {
     //std::cout << "dy = " << DY << '\n';
 
     /*ACTION LOOP*/
-    for (int i = 0; i < NITER;i++) {
+    for (int i = 0; i < NITER; i++) {
         ComputeE<<<grid, block>>>(Exx_cuda, Eyy_cuda, Exy_cuda, Vx_cuda, Vy_cuda, DX, DY, nx, ny);
         cudaDeviceSynchronize();
+        //SaveMatrix(P_cpu, P_cuda, nx, ny, "testc.dat");
         //std::cout << "dy = " << DY << '\n';
         ComputeTau<<<grid, block >>>(P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, Exx_cuda, Eyy_cuda, Exy_cuda, G0, K0, dt, nx, ny);
         cudaDeviceSynchronize();
@@ -296,24 +302,31 @@ int main() {
         ComputeTauxyAv<<<grid, block>>>(tauxyAV_cuda, tauXY_cuda, nx, ny);
         cudaDeviceSynchronize();
         ComputePlast<<<grid, block>>>(J2_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAV_cuda, lam_cuda, nx, ny, coh, flag_cuda);
-        cudaDeviceSynchronize();
+        cudaDeviceSynchronize();        
         cudaMemcpy(flag_cpu, flag_cuda, 1 * sizeof(int), cudaMemcpyDeviceToHost);
         if (flag_cpu[0] > 0) {
             ComputePlastCor<<<grid, block>>>(tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAV_cuda, J2_cuda, lama_cuda, lam_cuda, nx, ny);
             cudaDeviceSynchronize();
         }
+        flag_cpu[0] = 0;        
+        cudaMemcpy(flag_cuda, flag_cpu, 1 * sizeof(int), cudaMemcpyHostToDevice);
         /*SaveMatrix(J2_cpu, J2_cuda, nx, ny, "J2c.dat");
         SaveMatrix(lam_cpu, lam_cuda, nx, ny, "lamc.dat");*/
         //std::cout << "dy = " << DY << '\n';
         /*Plasticity end*/
         ComputeSigma<<<grid, block>>>(Sxx_cuda, Syy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, nx, ny);
         cudaDeviceSynchronize();
+        //SaveMatrix(Syy_cpu, Syy_cuda, nx, ny, "testc.dat");
         //std::cout << "dy = " << DY << '\n';
         ComputeF<<<grid, block>>>(Fx_cuda, Fy_cuda, Sxx_cuda, Syy_cuda, tauXY_cuda, DX, DY, nx, ny);
         cudaDeviceSynchronize();
-        /*SaveMatrix(Fx_cpu, Fx_cuda, nx-1, ny-2, "testFc.dat");
-        SaveMatrix(Fy_cpu, Fy_cuda, nx - 2, ny - 1, "testc.dat");
-        std::cout << "dx = " << DX << '\n';*/
+        /*SaveMatrix(tauXY_cpu, tauXY_cuda, nx-1, ny-1, "tauXYc.dat");
+        SaveMatrix(Sxx_cpu, Sxx_cuda, nx, ny, "Sxxc.dat");
+        SaveMatrix(Syy_cpu, Syy_cuda, nx, ny, "Syyc.dat");*/
+        /*SaveMatrix(Fx_cpu, Fx_cuda, nx - 1, ny - 2, "testFc.dat");
+        SaveMatrix(Fy_cpu, Fy_cuda, nx - 2, ny - 1, "testc.dat");*/
+        /*std::cout << "dx = " << DX << '\n';
+        std::cout << "dy = " << DY << '\n';*/
         ComputeV<<<grid, block>>>(Vx_cuda, Vy_cuda, Ux_cuda, Fx_cuda, Fy_cuda, rho, damp, dt, nx, ny);
         cudaDeviceSynchronize();
     }
@@ -326,9 +339,17 @@ int main() {
     SaveMatrix(tauXX_cpu, tauXX_cuda, nx, ny, "tauXXc.dat");
     SaveMatrix(tauYY_cpu, tauYY_cuda, nx, ny, "tauYYc.dat");
     SaveMatrix(tauXY_cpu, tauXY_cuda, nx-1, ny-1, "tauXYc.dat");
+    SaveMatrix(tauxyAV_cpu, tauxyAV_cuda, nx, ny, "tauxyAVc.dat");
     SaveMatrix(J2_cpu, J2_cuda, nx, ny, "J2c.dat");
     SaveMatrix(lam_cpu, lam_cuda, nx, ny, "lamc.dat");
     SaveMatrix(lama_cpu, lama_cuda, nx, ny, "lamac.dat");
+    SaveMatrix(Sxx_cpu, Sxx_cuda, nx, ny, "Sxxc.dat");
+    SaveMatrix(Syy_cpu, Syy_cuda, nx, ny, "Syyc.dat");
+    SaveMatrix(Fx_cpu, Fx_cuda, nx - 1, ny - 2, "Fc.dat");
+    SaveMatrix(Fy_cpu, Fy_cuda, nx - 2, ny - 1, "Fyc.dat");
+    SaveMatrix(Exx_cpu, Exx_cuda, nx, ny, "Exxc.dat");
+    SaveMatrix(Eyy_cpu, Eyy_cuda, nx, ny, "Eyyc.dat");
+    SaveMatrix(Exy_cpu, Exy_cuda, nx - 1, ny - 1, "Exyc.dat");
 
     /*Free mem*/
     free(Vx_cpu);
