@@ -31,7 +31,7 @@ Tauxy      = av4(sxy);
 CFL       = 1/2;                     % V Courant Friedrich Levy codition
 damp      = 5/1;                     % damping of acoustic waves
 nout      = 10;                   % plot every nout
-niter     =  2;                   % max number of iterations
+niter     =  1000;                   % max number of iterations
 % eiter     = 1e-16;                   % exit criteria from iterations
 nt        = 1;
 % preprocessing
@@ -94,12 +94,66 @@ for it = 1:nt
         Exxd = Exx   - divV/3;
         Eyyd = Eyy   - divV/3;
         
-        
+%         fil = fopen('Exxc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx, ny);
+%         difftest = Exx - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testEx')
+% 
+%         fil = fopen('Eyyc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx, ny);
+%         difftest = Eyy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testEy')
+% 
+%         fil = fopen('Exyc.dat', 'rb');
+%         testc = fread(fil, 'double');
+%         fclose(fil);
+%         testc = reshape(testc, nx-1, ny-1);
+%         difftest = Exy - testc;
+%         max(abs(difftest(:)))
+%         plot(231),imagesc(difftest),axis image,colorbar,title('testExy')
         
         Pr  = Pr   -   K0*dt*divV;               
         Tauxy = Tauxy  + 2*G0*dt*Exy;
         Txx = Txx  + 2*G0*dt*Exxd;
         Tyy = Tyy  + 2*G0*dt*Eyyd;
+        
+%         fil = fopen('Pc.dat', 'rb');
+%         Pc = fread(fil, 'double');
+%         fclose(fil);
+%         Pc = reshape(Pc, nx, ny);
+%         diffP = Pr - Pc;
+%         max(abs(diffP(:)))
+%         plot(231),imagesc(diffP),axis image,colorbar,title('diffP')
+%     
+%         fil = fopen('tauXXc.dat', 'rb');
+%         tauXXc = fread(fil, 'double');
+%         fclose(fil);
+%         tauXXc = reshape(tauXXc, nx, ny);
+%         difftauXX = Txx - tauXXc;
+%         max(abs(difftauXX(:)))
+%         plot(231),imagesc(difftauXX),axis image,colorbar,title('difftauXX')
+% 
+%         fil = fopen('tauYYc.dat', 'rb');
+%         tauYYc = fread(fil, 'double');
+%         fclose(fil);
+%         tauYYc = reshape(tauYYc, nx, ny);
+%         difftauYY = Tyy - tauYYc;
+%         max(abs(difftauYY(:)))
+%         plot(231),imagesc(difftauYY),axis image,colorbar,title('difftauYY')
+% 
+%         fil = fopen('tauXYc.dat', 'rb');
+%         tauXYc = fread(fil, 'double');
+%         fclose(fil);
+%         tauXYc = reshape(tauXYc, nx-1, ny-1);
+%         difftauXY = Tauxy - tauXYc;
+%         max(abs(difftauXY(:)))
+%         plot(231),imagesc(difftauXY),axis image,colorbar,title('difftauXY')
         
         %%%% Plasticity start
         Txye(2:end-1,2:end-1) = av4(Tauxy);
@@ -203,8 +257,7 @@ for it = 1:nt
         %if error(iter) < eiter,break,end
 %         if mod(iter,nout)==0,loglog(error(1:iter)),drawnow, end
     end
-    F  = J2/coh0-1; F(F<-coh0*0.01) = NaN;
-    lam = lama; lam(lam<0) = 0;
+    
     
     %Compare
     
@@ -356,7 +409,8 @@ for it = 1:nt
 
 
 
-
+    F  = J2/coh0-1; F(F<-coh0*0.01) = NaN;
+    lam = lama; lam(lam<0) = 0;
     
     subplot(231),imagesc(J2),axis image,colorbar,title(it)
     subplot(232),imagesc(Pr),axis image,colorbar,title('Pr')

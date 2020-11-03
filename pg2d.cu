@@ -19,13 +19,16 @@ __global__ void ComputeE(double* Exx, double* Eyy, double* Exy, const double* co
     }
 }
 
-__global__ void ComputeTau(double* P, double* tauXX, double* tauYY, double* tauXY, const double* const Exx, const double* const Eyy, const double* const Exy,
+__global__ void ComputeTau(double* P, double* tauXX, double* tauYY, double* tauXY, const double* const Exx, const double* const Eyy, const double* const Exy, double* divV, double* Exxd, double* Eyyd,
                            const double G0, const double K0, const double dt, const long int nx, const long int ny) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    P[j * nx + i] = P[j * nx + i] - K0 * dt * (Exx[j * nx + i] + Eyy[j * nx + i]);
-    tauXX[j * nx + i] = tauXX[j * nx + i] + 2 * G0 * dt * (Exx[j * nx + 1] - (Exx[j * nx + i] + Eyy[j * nx + i]) / 3);
-    tauYY[j * nx + i] = tauYY[j * nx + i] + 2 * G0 * dt * (Eyy[j * nx + 1] - (Exx[j * nx + i] + Eyy[j * nx + i]) / 3);
+    divV[j * nx + i] = Exx[j * nx + i] + Eyy[j * nx + i];
+    Exxd[j * nx + i] = Exx[j * nx + i] - divV[j * nx + i] / 3;
+    Eyyd[j * nx + i] = Eyy[j * nx + i] - divV[j * nx + i] / 3;
+    P[j * nx + i] = P[j * nx + i] - K0 * dt * divV[j * nx + i];
+    tauXX[j * nx + i] = tauXX[j * nx + i] + 2 * G0 * dt * Exxd[j * nx + i];
+    tauYY[j * nx + i] = tauYY[j * nx + i] + 2 * G0 * dt * Eyyd[j * nx + i];
     if (i < nx - 1 && j < ny - 1) {
         tauXY[j * (nx - 1) + i] = tauXY[j * (nx - 1) + i] + 2 * G0 * dt * Exy[j * (nx - 1) + i];
     }
@@ -251,6 +254,18 @@ int main() {
     double* Exy_cuda;
     SetMatrixZero(&Exy_cpu, &Exy_cuda, nx - 1, ny - 1);
 
+    double* divV_cpu;
+    double* divV_cuda;
+    SetMatrixZero(&divV_cpu, &divV_cuda, nx, ny);
+
+    double* Exxd_cpu;
+    double* Exxd_cuda;
+    SetMatrixZero(&Exxd_cpu, &Exxd_cuda, nx, ny);
+
+    double* Eyyd_cpu;
+    double* Eyyd_cuda;
+    SetMatrixZero(&Eyyd_cpu, &Eyyd_cuda, nx, ny);
+
     double* J2_cpu;
     double* J2_cuda;
     SetMatrixZero(&J2_cpu, &J2_cuda, nx, ny);
@@ -291,16 +306,24 @@ int main() {
     for (int i = 0; i < NITER; i++) {
         ComputeE<<<grid, block>>>(Exx_cuda, Eyy_cuda, Exy_cuda, Vx_cuda, Vy_cuda, DX, DY, nx, ny);
         cudaDeviceSynchronize();
+        /*SaveMatrix(Exx_cpu, Exx_cuda, nx, ny, "Exxc.dat");
+        SaveMatrix(Eyy_cpu, Eyy_cuda, nx, ny, "Eyyc.dat");
+        SaveMatrix(Exy_cpu, Exy_cuda, nx - 1, ny - 1, "Exyc.dat");*/
         //SaveMatrix(P_cpu, P_cuda, nx, ny, "testc.dat");
         //std::cout << "dy = " << DY << '\n';
-        ComputeTau<<<grid, block >>>(P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, Exx_cuda, Eyy_cuda, Exy_cuda, G0, K0, dt, nx, ny);
+        ComputeTau<<<grid, block >>>(P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, Exx_cuda, Eyy_cuda, Exy_cuda, divV_cuda, Exxd_cuda, Eyyd_cuda, G0, K0, dt, nx, ny);
         cudaDeviceSynchronize();
         /*Plasticity start*/
         //std::cout << "dy = " << DY << '\n';
         flag_cpu[0] = 0;
         cudaMemcpy(flag_cuda, flag_cpu, 1 * sizeof(int), cudaMemcpyHostToDevice);
+
         ComputeTauxyAv<<<grid, block>>>(tauxyAV_cuda, tauXY_cuda, nx, ny);
         cudaDeviceSynchronize();
+        /*SaveMatrix(P_cpu, P_cuda, nx, ny, "Pc.dat");
+        SaveMatrix(tauXX_cpu, tauXX_cuda, nx, ny, "tauXXc.dat");
+        SaveMatrix(tauYY_cpu, tauYY_cuda, nx, ny, "tauYYc.dat");
+        SaveMatrix(tauXY_cpu, tauXY_cuda, nx - 1, ny - 1, "tauXYc.dat");*/
         ComputePlast<<<grid, block>>>(J2_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAV_cuda, lam_cuda, nx, ny, coh, flag_cuda);
         cudaDeviceSynchronize();        
         cudaMemcpy(flag_cpu, flag_cuda, 1 * sizeof(int), cudaMemcpyDeviceToHost);
