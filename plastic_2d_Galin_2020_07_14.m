@@ -33,7 +33,7 @@ damp      = 5/1;                     % damping of acoustic waves
 nout      = 10;                   % plot every nout
 niter     =  1000;                   % max number of iterations
 % eiter     = 1e-16;                   % exit criteria from iterations
-nt        = 1;
+nt        = 10;
 % preprocessing
 dt        = 1;                           % time step
 rho0      = dt^2/CFL^2/dx^2*(K0+4/3*G0); % inertial density
@@ -44,6 +44,7 @@ Vx             = zeros(nx+1,ny  );
 Vy             = zeros(nx  ,ny+1);
 Txye           = zeros(nx  ,ny  );
 Str            = 0*dStr;
+lam            = zeros(nx,ny);
 % action
 error          = zeros(niter,1);
 for it = 1:nt
@@ -73,6 +74,7 @@ for it = 1:nt
     fid          = fopen( 'tauXX.dat','wb'); fwrite(fid,    Txx(:),'double'); fclose(fid);
     fid          = fopen( 'tauYY.dat','wb'); fwrite(fid,    Tyy(:),'double'); fclose(fid);
     fid          = fopen( 'tauXY.dat','wb'); fwrite(fid,    Tauxy(:),'double'); fclose(fid);
+    fid          = fopen( 'lam.dat','wb'); fwrite(fid,    lam(:),'double'); fclose(fid);
     %fid          = fopen( 'Sxx.dat','wb'); fwrite(fid,    sxx(:),'double'); fclose(fid);
     %fid          = fopen( 'Syy.dat','wb'); fwrite(fid,    syy(:),'double'); fclose(fid);
     system(['nvcc -DNGRID=',int2str(ngrid),' -DNITER=',int2str(niter),' -DK=',num2str(K0,16),...

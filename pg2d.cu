@@ -180,19 +180,7 @@ int main() {
     double rho = RHO;
     double dt = DT;
     double damp = DAMP;
-    //double dx = DX;
-    /*std::cout << "K0=" << K0 << "     " << K << '\n';
-    std::cout << "G0=" << G0 << "     " << G << '\n';
-    std::cout << "coh=" << coh << "     " << COH << '\n';
-    std::cout << "rho=" << rho << "     " << RHO << '\n';
-    std::cout << "dt=" << dt << "     " << DT << '\n';
-    std::cout << "damp=" << damp << "     " << DAMP << '\n';
-    std::cout << "dx = " << DX << '\n';
-    std::cout << "dy = " << DY << '\n';*/
     
-    /*FILE* fil = fopen("dx.dat", "wb");
-    fwrite( &dx, sizeof(double), 1, fil);
-    fclose(fil);*/
 
     
     dim3 grid, block;
@@ -237,6 +225,10 @@ int main() {
     double* Ux_cuda;
     LoadMatrix(&Ux_cpu, &Ux_cuda, nx + 1, ny, "Ux.dat");
 
+    double* lam_cpu;
+    double* lam_cuda;
+    LoadMatrix(&lam_cpu, &lam_cuda, nx, ny, "lam.dat");
+
     //set zeros
     double* tauxyAV_cpu;
     double* tauxyAV_cuda;
@@ -269,11 +261,7 @@ int main() {
     double* J2_cpu;
     double* J2_cuda;
     SetMatrixZero(&J2_cpu, &J2_cuda, nx, ny);
-
-    double* lam_cpu;
-    double* lam_cuda;
-    SetMatrixZero(&lam_cpu, &lam_cuda, nx, ny);
-
+        
     double* lama_cpu;
     double* lama_cuda;
     SetMatrixZero(&lama_cpu, &lama_cuda, nx, ny);
@@ -300,56 +288,43 @@ int main() {
     double* Fy_cpu;
     double* Fy_cuda;
     SetMatrixZero(&Fy_cpu, &Fy_cuda, nx - 2, ny - 1);
-    //std::cout << "dy = " << DY << '\n';
-
+    
     /*ACTION LOOP*/
     for (int i = 0; i < NITER; i++) {
         ComputeE<<<grid, block>>>(Exx_cuda, Eyy_cuda, Exy_cuda, Vx_cuda, Vy_cuda, DX, DY, nx, ny);
         cudaDeviceSynchronize();
-        /*SaveMatrix(Exx_cpu, Exx_cuda, nx, ny, "Exxc.dat");
-        SaveMatrix(Eyy_cpu, Eyy_cuda, nx, ny, "Eyyc.dat");
-        SaveMatrix(Exy_cpu, Exy_cuda, nx - 1, ny - 1, "Exyc.dat");*/
-        //SaveMatrix(P_cpu, P_cuda, nx, ny, "testc.dat");
-        //std::cout << "dy = " << DY << '\n';
+        
         ComputeTau<<<grid, block >>>(P_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, Exx_cuda, Eyy_cuda, Exy_cuda, divV_cuda, Exxd_cuda, Eyyd_cuda, G0, K0, dt, nx, ny);
         cudaDeviceSynchronize();
+
         /*Plasticity start*/
-        //std::cout << "dy = " << DY << '\n';
+        
         flag_cpu[0] = 0;
         cudaMemcpy(flag_cuda, flag_cpu, 1 * sizeof(int), cudaMemcpyHostToDevice);
 
         ComputeTauxyAv<<<grid, block>>>(tauxyAV_cuda, tauXY_cuda, nx, ny);
         cudaDeviceSynchronize();
-        /*SaveMatrix(P_cpu, P_cuda, nx, ny, "Pc.dat");
-        SaveMatrix(tauXX_cpu, tauXX_cuda, nx, ny, "tauXXc.dat");
-        SaveMatrix(tauYY_cpu, tauYY_cuda, nx, ny, "tauYYc.dat");
-        SaveMatrix(tauXY_cpu, tauXY_cuda, nx - 1, ny - 1, "tauXYc.dat");*/
+        
         ComputePlast<<<grid, block>>>(J2_cuda, tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAV_cuda, lam_cuda, nx, ny, coh, flag_cuda);
         cudaDeviceSynchronize();        
         cudaMemcpy(flag_cpu, flag_cuda, 1 * sizeof(int), cudaMemcpyDeviceToHost);
+
         if (flag_cpu[0] > 0) {
             ComputePlastCor<<<grid, block>>>(tauXX_cuda, tauYY_cuda, tauXY_cuda, tauxyAV_cuda, J2_cuda, lama_cuda, lam_cuda, nx, ny);
             cudaDeviceSynchronize();
         }
+
         flag_cpu[0] = 0;        
         cudaMemcpy(flag_cuda, flag_cpu, 1 * sizeof(int), cudaMemcpyHostToDevice);
-        /*SaveMatrix(J2_cpu, J2_cuda, nx, ny, "J2c.dat");
-        SaveMatrix(lam_cpu, lam_cuda, nx, ny, "lamc.dat");*/
-        //std::cout << "dy = " << DY << '\n';
+        
         /*Plasticity end*/
+
         ComputeSigma<<<grid, block>>>(Sxx_cuda, Syy_cuda, P_cuda, tauXX_cuda, tauYY_cuda, nx, ny);
         cudaDeviceSynchronize();
-        //SaveMatrix(Syy_cpu, Syy_cuda, nx, ny, "testc.dat");
-        //std::cout << "dy = " << DY << '\n';
+        
         ComputeF<<<grid, block>>>(Fx_cuda, Fy_cuda, Sxx_cuda, Syy_cuda, tauXY_cuda, DX, DY, nx, ny);
         cudaDeviceSynchronize();
-        /*SaveMatrix(tauXY_cpu, tauXY_cuda, nx-1, ny-1, "tauXYc.dat");
-        SaveMatrix(Sxx_cpu, Sxx_cuda, nx, ny, "Sxxc.dat");
-        SaveMatrix(Syy_cpu, Syy_cuda, nx, ny, "Syyc.dat");*/
-        /*SaveMatrix(Fx_cpu, Fx_cuda, nx - 1, ny - 2, "testFc.dat");
-        SaveMatrix(Fy_cpu, Fy_cuda, nx - 2, ny - 1, "testc.dat");*/
-        /*std::cout << "dx = " << DX << '\n';
-        std::cout << "dy = " << DY << '\n';*/
+        
         ComputeV<<<grid, block>>>(Vx_cuda, Vy_cuda, Ux_cuda, Fx_cuda, Fy_cuda, rho, damp, dt, nx, ny);
         cudaDeviceSynchronize();
     }
@@ -394,6 +369,9 @@ int main() {
     free(Syy_cpu);
     free(Fx_cpu);
     free(Fy_cpu);
+    free(divV_cpu);
+    free(Exxd_cpu);
+    free(Eyyd_cpu);
 
     cudaFree(Vx_cuda);
     cudaFree(Vy_cuda);
@@ -414,6 +392,9 @@ int main() {
     cudaFree(Syy_cuda);
     cudaFree(Fx_cuda);
     cudaFree(Fy_cuda);
+    cudaFree(divV_cuda);
+    cudaFree(Exxd_cuda);
+    cudaFree(Eyyd_cuda);
 
     return 0;
 }
