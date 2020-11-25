@@ -1,4 +1,8 @@
 clear,figure(1),clf,colormap jet
+function A_av = av4(A)
+A_av = 0.25*(A(1:end-1,1:end-1) + A(1:end-1,2:end) ...
+    +        A(2:end  ,1:end-1) + A(2:end  ,2:end));
+end
 % Physics
 K0       = 1;       %  bulk modulus, Pa
 G0       = 1;       % shear modulus, Pa
@@ -33,7 +37,7 @@ damp      = 5/1;                     % damping of acoustic waves
 nout      = 10;                   % plot every nout
 niter     =  1000;                   % max number of iterations
 % eiter     = 1e-16;                   % exit criteria from iterations
-nt        = 10;
+nt        = 1;
 % preprocessing
 dt        = 1;                           % time step
 rho0      = dt^2/CFL^2/dx^2*(K0+4/3*G0); % inertial density
@@ -85,6 +89,7 @@ for it = 1:nt
     tic,system('a.exe');
     GPU_time=toc
     %GBs(irun) = nx*ny*nt*3*2*8/GPU_time/1e9;
+    tic;
     for iter = 1:niter
         Exx  = diff(Vx,1,1)/dx;
         
@@ -260,7 +265,7 @@ for it = 1:nt
 %         if mod(iter,nout)==0,loglog(error(1:iter)),drawnow, end
     end
     
-    
+    LAB_time = toc
     %Compare
     
     fil = fopen('Vxc.dat', 'rb');
@@ -426,7 +431,4 @@ for it = 1:nt
     title(max(J2(:)./coh0-1)),drawnow
     iter
 end
-function A_av = av4(A)
-A_av = 0.25*(A(1:end-1,1:end-1) + A(1:end-1,2:end) ...
-    +        A(2:end  ,1:end-1) + A(2:end  ,2:end));
-end
+
